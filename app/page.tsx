@@ -23,6 +23,12 @@ type HomeTask = {
   completed: boolean;
 };
 
+type HomeProfile = {
+  username: string;
+  university: string;
+  course: string;
+};
+
 const STUDY_PLAN_STORAGE_KEY = "lockdin_study_plan";
 
 function getDaysUntil(dateString: string) {
@@ -134,6 +140,7 @@ export default function HomePage() {
   const { tasks: providerTasks, loading } = useTasks();
   const [studyBlocks, setStudyBlocks] = useState<StudyBlock[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [profile, setProfile] = useState<HomeProfile | null>(null);
 
   useEffect(() => {
     setStudyBlocks(
@@ -147,17 +154,23 @@ export default function HomePage() {
 
       setIsLoggedIn(!!user);
 
-      if (!user) return;
+      if (!user) {
+        setProfile(null);
+        return;
+      }
 
-      const { data: profile } = await supabase
+      const { data: profileData } = await supabase
         .from("profiles")
-        .select("id")
+        .select("username, university, course")
         .eq("id", user.id)
         .maybeSingle();
 
-      if (!profile) {
+      if (!profileData) {
         router.push("/onboarding");
+        return;
       }
+
+      setProfile(profileData);
     }
 
     checkAuthAndProfile();
@@ -168,17 +181,23 @@ export default function HomePage() {
       const user = session?.user ?? null;
       setIsLoggedIn(!!user);
 
-      if (!user) return;
+      if (!user) {
+        setProfile(null);
+        return;
+      }
 
-      const { data: profile } = await supabase
+      const { data: profileData } = await supabase
         .from("profiles")
-        .select("id")
+        .select("username, university, course")
         .eq("id", user.id)
         .maybeSingle();
 
-      if (!profile) {
+      if (!profileData) {
         router.push("/onboarding");
+        return;
       }
+
+      setProfile(profileData);
     });
 
     return () => {
@@ -187,7 +206,7 @@ export default function HomePage() {
   }, [router]);
 
   const tasks = useMemo<HomeTask[]>(() => {
-    return (providerTasks as any[]).map((task) => ({
+    return ((providerTasks ?? []) as any[]).map((task) => ({
       id: task.id,
       title: task.title,
       module: task.module,
@@ -386,12 +405,29 @@ export default function HomePage() {
                     Built for students who need to lock in
                   </div>
 
-                  <Link
-                    href={isLoggedIn ? "/tasks" : "/login"}
-                    className="inline-flex w-full items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium text-white transition hover:bg-white/10 sm:w-auto"
-                  >
-                    {isLoggedIn ? "Go to tasks" : "Log in"}
-                  </Link>
+                  {isLoggedIn && profile ? (
+                    <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500 text-sm font-semibold text-white">
+                        {profile.username?.[0]?.toUpperCase()}
+                      </div>
+
+                      <div className="text-left">
+                        <p className="text-sm font-semibold text-white">
+                          @{profile.username}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {profile.course} • {profile.university}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <Link
+                      href="/login"
+                      className="inline-flex w-full items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium text-white transition hover:bg-white/10 sm:w-auto"
+                    >
+                      Log in
+                    </Link>
+                  )}
                 </div>
 
                 <h1 className="mt-5 text-3xl font-semibold tracking-tight text-white sm:mt-6 sm:text-4xl md:text-5xl xl:text-6xl">
