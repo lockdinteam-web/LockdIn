@@ -72,19 +72,30 @@ function getCookedHeadline(score: number) {
   return "This is salvageable, but only if you lock in immediately.";
 }
 
+function getDeadlineUrgencyScore(days: number, priority: Priority) {
+  const weight = priorityWeight(priority);
+
+  if (days < 0) return 12 * weight;      // overdue
+  if (days === 0) return 10 * weight;    // due today
+  if (days === 1) return 8 * weight;     // due tomorrow
+  if (days <= 3) return 6 * weight;      // next 3 days
+  if (days <= 7) return 4 * weight;      // this week
+  if (days <= 14) return 2 * weight;     // next 2 weeks
+  return 1 * weight;                     // still counts a bit
+}
+
 export function calculateCookedScore(
   tasks: Task[],
   studyBlocks: StudyBlock[]
 ): CookedResult {
   const incompleteTasks = tasks.filter((task) => !task.completed);
+  const reasons: string[] = [];
 
   let overdueScore = 0;
-  let upcomingScore = 0;
+  let deadlinePressureScore = 0;
   let priorityScore = 0;
   let workloadScore = 0;
   let missedStudyScore = 0;
-
-  const reasons: string[] = [];
 
   const overdueTasks = incompleteTasks.filter((task) => daysUntil(task.dueDate) < 0);
 
@@ -103,10 +114,13 @@ export function calculateCookedScore(
 
   const missedBlocks = studyBlocks.filter((block) => !block.completed);
 
-  // Overdue tasks
+  // 1) Overdue tasks: harsher than before
   overdueScore = Math.min(
-    30,
-    overdueTasks.reduce((sum, task) => sum + 6 * priorityWeight(task.priority), 0)
+    35,
+    overdueTasks.reduce(
+      (sum, task) => sum + 8 * priorityWeight(task.priority),
+      0
+    )
   );
 
   if (overdueTasks.length > 0) {
@@ -115,15 +129,12 @@ export function calculateCookedScore(
     );
   }
 
-  // Upcoming deadlines
-  upcomingScore = Math.min(
-    25,
-    dueSoonTasks.reduce((sum, task) => {
+  // 2) Deadline pressure: much harsher for tasks close to today
+  deadlinePressureScore = Math.min(
+    30,
+    incompleteTasks.reduce((sum, task) => {
       const days = daysUntil(task.dueDate);
-
-      if (days <= 1) return sum + 6 * priorityWeight(task.priority);
-      if (days <= 3) return sum + 4 * priorityWeight(task.priority);
-      return sum + 2 * priorityWeight(task.priority);
+      return sum + getDeadlineUrgencyScore(days, task.priority);
     }, 0)
   );
 
@@ -133,7 +144,7 @@ export function calculateCookedScore(
     );
   }
 
-  // Priority pressure
+  // 3) Priority pressure
   priorityScore = Math.min(15, highPriorityOpen * 4 + mediumPriorityOpen * 2);
 
   if (highPriorityOpen > 0) {
@@ -142,14 +153,26 @@ export function calculateCookedScore(
     );
   }
 
-  // Workload volume
-  workloadScore = Math.min(15, incompleteTasks.length * 2);
+  // 4) Workload pressure: scales up harder as unfinished tasks increase
+  const incompleteCount = incompleteTasks.length;
 
-  if (incompleteTasks.length >= 5) {
-    reasons.push(`${incompleteTasks.length} unfinished tasks total`);
+  if (incompleteCount <= 2) {
+    workloadScore = incompleteCount * 2;
+  } else if (incompleteCount <= 4) {
+    workloadScore = 4 + (incompleteCount - 2) * 3;
+  } else if (incompleteCount <= 7) {
+    workloadScore = 10 + (incompleteCount - 4) * 4;
+  } else {
+    workloadScore = 22 + (incompleteCount - 7) * 5;
   }
 
-  // Missed study blocks
+  workloadScore = Math.min(25, workloadScore);
+
+  if (incompleteCount >= 4) {
+    reasons.push(`${incompleteCount} unfinished tasks building up`);
+  }
+
+  // 5) Missed study blocks
   missedStudyScore = Math.min(15, missedBlocks.length * 3);
 
   if (missedBlocks.length > 0) {
@@ -160,7 +183,7 @@ export function calculateCookedScore(
 
   const rawScore =
     overdueScore +
-    upcomingScore +
+    deadlinePressureScore +
     priorityScore +
     workloadScore +
     missedStudyScore;
