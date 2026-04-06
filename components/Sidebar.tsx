@@ -15,7 +15,7 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="flex min-h-screen w-72 flex-col border-r border-slate-800 bg-slate-950/95 backdrop-blur-xl">
+    <aside className="hidden min-h-screen w-72 flex-col border-r border-slate-800 bg-slate-950/95 backdrop-blur-xl md:flex">
       <div className="border-b border-slate-800 px-6 py-6">
         <Link
           href="/"
