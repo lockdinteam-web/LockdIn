@@ -34,6 +34,16 @@ function getDaysUntil(dateString: string) {
   return Math.ceil(diff / (1000 * 60 * 60 * 24));
 }
 
+function safeParseArray<T>(value: string | null): T[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function getPriorityBadge(priority: Priority) {
   if (priority === "High") {
     return "bg-rose-500/15 text-rose-300 ring-1 ring-rose-400/20";
@@ -46,10 +56,75 @@ function getPriorityBadge(priority: Priority) {
 
 function getCookedTextColor(score: number) {
   if (score <= 20) return "text-emerald-300";
-  if (score <= 40) return "text-green-300";
+  if (score <= 40) return "text-lime-300";
   if (score <= 60) return "text-amber-300";
   if (score <= 80) return "text-orange-300";
   return "text-rose-300";
+}
+
+function getCookedBarClass(score: number) {
+  if (score <= 20) return "bg-emerald-500";
+  if (score <= 40) return "bg-lime-500";
+  if (score <= 60) return "bg-amber-500";
+  if (score <= 80) return "bg-orange-500";
+  return "bg-rose-500";
+}
+
+function getCookedGlowClass(score: number) {
+  if (score <= 20) return "shadow-[0_0_40px_rgba(16,185,129,0.18)]";
+  if (score <= 40) return "shadow-[0_0_40px_rgba(132,204,22,0.18)]";
+  if (score <= 60) return "shadow-[0_0_40px_rgba(245,158,11,0.18)]";
+  if (score <= 80) return "shadow-[0_0_40px_rgba(249,115,22,0.18)]";
+  return "shadow-[0_0_40px_rgba(244,63,94,0.18)]";
+}
+
+function getCookedZone(score: number) {
+  if (score <= 20) return "Locked In";
+  if (score <= 40) return "Stable";
+  if (score <= 60) return "Under Pressure";
+  if (score <= 80) return "Cooked";
+  return "Deep Fried";
+}
+
+function getUpcomingLabel(days: number) {
+  if (days < 0) {
+    return `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`;
+  }
+  if (days === 0) return "Due today";
+  if (days === 1) return "Due tomorrow";
+  return `Due in ${days} days`;
+}
+
+function getMotivationLine(score: number, pending: number, overdue: number) {
+  if (overdue > 0) {
+    return "You do not need a new plan. You need to clear overdue work first.";
+  }
+  if (score >= 85) {
+    return "This is recoverable, but only if you lock in today.";
+  }
+  if (score >= 65) {
+    return "You’re still in control, but the pressure is building fast.";
+  }
+  if (pending >= 5) {
+    return "You’re not behind yet, but the workload is starting to stack.";
+  }
+  if (pending > 0) {
+    return "Momentum is good. Keep finishing what is already in motion.";
+  }
+  return "Clean board. This is the perfect time to stay ahead.";
+}
+
+function getHeroSubtitle(score: number) {
+  if (score >= 80) {
+    return "Your deadlines are starting to fight back.";
+  }
+  if (score >= 60) {
+    return "Pressure is rising. Good time to move.";
+  }
+  if (score >= 40) {
+    return "Not bad. Still room to tighten up.";
+  }
+  return "You’re looking suspiciously organised.";
 }
 
 export default function HomePage() {
@@ -57,24 +132,10 @@ export default function HomePage() {
   const [studyBlocks, setStudyBlocks] = useState<StudyBlock[]>([]);
 
   useEffect(() => {
-    const savedTasks = localStorage.getItem(STORAGE_KEY);
-    const savedStudyPlan = localStorage.getItem(STUDY_PLAN_STORAGE_KEY);
-
-    if (savedTasks) {
-      try {
-        setTasks(JSON.parse(savedTasks));
-      } catch {
-        setTasks([]);
-      }
-    }
-
-    if (savedStudyPlan) {
-      try {
-        setStudyBlocks(JSON.parse(savedStudyPlan));
-      } catch {
-        setStudyBlocks([]);
-      }
-    }
+    setTasks(safeParseArray<Task>(localStorage.getItem(STORAGE_KEY)));
+    setStudyBlocks(
+      safeParseArray<StudyBlock>(localStorage.getItem(STUDY_PLAN_STORAGE_KEY))
+    );
   }, []);
 
   const stats = useMemo(() => {
@@ -88,6 +149,18 @@ export default function HomePage() {
       (task) => !task.completed && getDaysUntil(task.dueDate) < 0
     ).length;
 
+    const urgent = tasks.filter((task) => {
+      if (task.completed) return false;
+      const days = getDaysUntil(task.dueDate);
+      return days >= 0 && days <= 1;
+    }).length;
+
+    const dueThisWeek = tasks.filter((task) => {
+      if (task.completed) return false;
+      const days = getDaysUntil(task.dueDate);
+      return days >= 0 && days <= 7;
+    }).length;
+
     const upcoming = [...tasks]
       .filter((task) => !task.completed)
       .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
@@ -97,16 +170,37 @@ export default function HomePage() {
     const completionRate =
       tasks.length > 0 ? Math.round((completed / tasks.length) * 100) : 0;
 
+    const completedStudyBlocks = studyBlocks.filter((block) => block.completed).length;
+    const openStudyBlocks = studyBlocks.filter((block) => !block.completed).length;
+
+    const studyHours =
+      Math.round(
+        (studyBlocks.reduce((sum, block) => sum + block.durationMinutes, 0) / 60) * 10
+      ) / 10;
+
+    const plannerCompletionRate =
+      studyBlocks.length > 0
+        ? Math.round((completedStudyBlocks / studyBlocks.length) * 100)
+        : 0;
+
+    const recent = [...tasks].slice(0, 5);
+
     return {
       completed,
       pending,
       highPriority,
       overdue,
+      urgent,
+      dueThisWeek,
       nextTask,
       completionRate,
-      recent: tasks.slice(0, 5),
+      completedStudyBlocks,
+      openStudyBlocks,
+      studyHours,
+      plannerCompletionRate,
+      recent,
     };
-  }, [tasks]);
+  }, [tasks, studyBlocks]);
 
   const cooked = useMemo(() => {
     return calculateCookedScore(tasks, studyBlocks);
@@ -116,50 +210,101 @@ export default function HomePage() {
     return getBestRecoveryAction(tasks, studyBlocks);
   }, [tasks, studyBlocks]);
 
+  const biggestThreat = useMemo(() => {
+    return [...tasks]
+      .filter((task) => !task.completed)
+      .sort((a, b) => {
+        const aDays = getDaysUntil(a.dueDate);
+        const bDays = getDaysUntil(b.dueDate);
+
+        const aScore =
+          (aDays < 0 ? 100 : aDays === 0 ? 80 : aDays === 1 ? 65 : aDays <= 3 ? 45 : 20) +
+          (a.priority === "High" ? 25 : a.priority === "Medium" ? 15 : 8);
+
+        const bScore =
+          (bDays < 0 ? 100 : bDays === 0 ? 80 : bDays === 1 ? 65 : bDays <= 3 ? 45 : 20) +
+          (b.priority === "High" ? 25 : b.priority === "Medium" ? 15 : 8);
+
+        return bScore - aScore;
+      })[0] ?? null;
+  }, [tasks]);
+
+  const todayFocus = useMemo(() => {
+    return [...tasks]
+      .filter((task) => !task.completed)
+      .sort((a, b) => {
+        const aDays = getDaysUntil(a.dueDate);
+        const bDays = getDaysUntil(b.dueDate);
+
+        const aValue =
+          (aDays < 0 ? 100 : aDays === 0 ? 90 : aDays === 1 ? 75 : aDays <= 3 ? 55 : 20) +
+          (a.priority === "High" ? 30 : a.priority === "Medium" ? 18 : 8);
+
+        const bValue =
+          (bDays < 0 ? 100 : bDays === 0 ? 90 : bDays === 1 ? 75 : bDays <= 3 ? 55 : 20) +
+          (b.priority === "High" ? 30 : b.priority === "Medium" ? 18 : 8);
+
+        return bValue - aValue;
+      })
+      .slice(0, 3);
+  }, [tasks]);
+
   const coachTitle =
     stats.overdue > 0
-      ? "Your top priority is clearing overdue work"
+      ? "Clear overdue work before anything else"
       : stats.highPriority > 0
-      ? "Your top priority is your high-priority tasks"
+      ? "High-priority work needs your focus"
       : stats.pending > 0
-      ? "Your focus today is steady execution"
-      : "You’re in a strong position today";
+      ? "Your edge comes from finishing, not adding more"
+      : "You’re in a strong position right now";
 
   const coachMessage =
     stats.overdue > 0
       ? `You have ${stats.overdue} overdue task${
           stats.overdue === 1 ? "" : "s"
-        }. Clear those first before adding anything new.`
+        }. That is the main thing dragging your score up right now.`
       : stats.highPriority > 0
-      ? `You have ${stats.highPriority} high-priority task${
+      ? `You still have ${stats.highPriority} high-priority task${
           stats.highPriority === 1 ? "" : "s"
-        } still open. Focus on finishing those before lower-value work.`
+        } open. Finishing one of those will shift things fastest.`
       : stats.pending > 0
-      ? `You currently have ${stats.pending} active task${
+      ? `You have ${stats.pending} active task${
           stats.pending === 1 ? "" : "s"
-        }. Stay consistent and complete what is already in motion.`
-      : "Your current workload is clear. This is a good moment to plan ahead and protect momentum.";
+        } in motion. Protect momentum by finishing what is already open.`
+      : "No current backlog. Best move now is staying ahead before pressure builds again.";
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#020817] text-white">
       <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
         <div className="space-y-5 sm:space-y-8">
-          <section className="overflow-hidden rounded-[24px] border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.18),_transparent_35%),linear-gradient(180deg,#08122b_0%,#061021_100%)] p-4 shadow-[0_20px_80px_rgba(0,0,0,0.35)] sm:rounded-[32px] sm:p-8 md:p-10">
-            <div className="flex flex-col gap-8 sm:gap-10 xl:flex-row xl:items-center xl:justify-between">
+          <section className="overflow-hidden rounded-[24px] border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(244,63,94,0.12),_transparent_25%),linear-gradient(180deg,#08122b_0%,#061021_100%)] p-4 shadow-[0_20px_80px_rgba(0,0,0,0.35)] sm:rounded-[32px] sm:p-8 md:p-10">
+            <div className="grid gap-8 xl:grid-cols-[1.15fr_0.85fr] xl:items-center">
               <div className="max-w-3xl">
                 <div className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300 sm:px-4 sm:text-sm">
                   <span className="h-2 w-2 rounded-full bg-blue-400" />
-                  Academic productivity system
+                  Built for students who need to lock in
                 </div>
 
                 <h1 className="mt-5 text-3xl font-semibold tracking-tight text-white sm:mt-6 sm:text-4xl md:text-5xl xl:text-6xl">
-                  Study smarter. Stay organised. Perform better.
+                  Study smarter. Stay organised. Know how cooked you are.
                 </h1>
 
                 <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300 sm:mt-5 sm:text-base sm:leading-8 md:text-lg">
-                  LockdIn gives you a cleaner way to manage tasks, structure study
-                  time, and keep momentum high without losing sight of deadlines.
+                  LockdIn turns your tasks, deadlines, and study blocks into one clear
+                  academic command centre — so you always know what matters next.
                 </p>
+
+                <div className="mt-6 flex flex-wrap gap-3">
+                  <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300">
+                    {stats.pending} active task{stats.pending === 1 ? "" : "s"}
+                  </div>
+                  <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300">
+                    {stats.dueThisWeek} due this week
+                  </div>
+                  <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300">
+                    {stats.studyHours} planned hours
+                  </div>
+                </div>
 
                 <div className="mt-6 grid grid-cols-1 gap-3 sm:mt-8 sm:flex sm:flex-wrap sm:gap-4">
                   <Link
@@ -183,38 +328,95 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="relative flex justify-center xl:min-w-[360px] xl:justify-end">
+              <div className="relative">
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="h-52 w-52 rounded-full bg-blue-500/15 blur-3xl sm:h-64 sm:w-64 md:h-80 md:w-80" />
+                  <div className="h-64 w-64 rounded-full bg-blue-500/10 blur-3xl sm:h-80 sm:w-80" />
                 </div>
 
-                <div className="relative w-full max-w-[320px] rounded-[24px] border border-white/10 bg-white/[0.04] p-4 shadow-[0_20px_60px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:max-w-none sm:rounded-[32px] sm:p-5">
-                  <div className="absolute -left-1 top-3 rounded-2xl border border-white/10 bg-[#101b38]/95 px-3 py-2 shadow-lg backdrop-blur sm:-left-3 sm:top-4 sm:px-4 sm:py-3">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                      Focus
-                    </p>
-                    <p className="mt-1 text-sm font-semibold text-white md:text-base">
-                      Deep Work
-                    </p>
-                  </div>
+                <div
+                  className={`relative rounded-[28px] border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl sm:p-5 ${getCookedGlowClass(
+                    cooked.score
+                  )}`}
+                >
+                  <div className="grid gap-4">
+                    <div className="rounded-[24px] border border-white/10 bg-[#0d1730] p-4 sm:p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                            Live cooked score
+                          </p>
+                          <div className="mt-3 flex items-end gap-3">
+                            <span
+                              className={`text-5xl font-semibold sm:text-6xl ${getCookedTextColor(
+                                cooked.score
+                              )}`}
+                            >
+                              {cooked.score}
+                            </span>
+                            <span className="pb-2 text-xl text-slate-500">/100</span>
+                          </div>
+                          <p className="mt-2 text-sm font-medium text-white">
+                            {getCookedZone(cooked.score)}
+                          </p>
+                        </div>
 
-                  <div className="absolute -right-1 bottom-3 rounded-2xl border border-white/10 bg-[#101b38]/95 px-3 py-2 shadow-lg backdrop-blur sm:-right-3 sm:bottom-4 sm:px-4 sm:py-3">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                      Momentum
-                    </p>
-                    <p className="mt-1 text-sm font-semibold text-blue-300 md:text-base">
-                      Locked In
-                    </p>
-                  </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-right">
+                          <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                            Status
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-white">
+                            {cooked.status}
+                          </p>
+                        </div>
+                      </div>
 
-                  <div className="rounded-[20px] border border-white/10 bg-[#0d1730] p-4 shadow-inner sm:rounded-[28px] sm:p-5">
-                    <div className="rounded-[18px] bg-white p-4 sm:rounded-[20px] sm:p-5">
+                      <div className="mt-5 h-3 w-full overflow-hidden rounded-full bg-white/10">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${getCookedBarClass(
+                            cooked.score
+                          )}`}
+                          style={{ width: `${Math.max(8, cooked.score)}%` }}
+                        />
+                      </div>
+
+                      <p className="mt-4 text-sm leading-6 text-slate-300">
+                        {getHeroSubtitle(cooked.score)}
+                      </p>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-white/10 bg-[#101b38] p-4">
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                          Next move
+                        </p>
+                        <p className="mt-2 text-sm font-medium text-white">
+                          {bestRecoveryAction
+                            ? bestRecoveryAction.label
+                            : "You’re currently clear"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-white/10 bg-[#101b38] p-4">
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                          Momentum
+                        </p>
+                        <p className="mt-2 text-sm font-medium text-blue-300">
+                          {stats.completionRate >= 80
+                            ? "Strong"
+                            : stats.completionRate >= 50
+                            ? "Building"
+                            : "Needs work"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[22px] border border-white/10 bg-white p-4">
                       <Image
                         src="/logo.png"
                         alt="LockdIn logo"
                         width={260}
                         height={260}
-                        className="mx-auto h-auto w-[160px] object-contain sm:w-[190px] md:w-[240px]"
+                        className="mx-auto h-auto w-[150px] object-contain sm:w-[190px]"
                         priority
                       />
                     </div>
@@ -224,7 +426,7 @@ export default function HomePage() {
             </div>
           </section>
 
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
             <div className="rounded-3xl border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.2)] sm:p-6">
               <p className="text-sm text-slate-400">Total tasks</p>
               <p className="mt-3 text-3xl font-semibold sm:text-4xl">{tasks.length}</p>
@@ -236,8 +438,8 @@ export default function HomePage() {
             </div>
 
             <div className="rounded-3xl border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.2)] sm:p-6">
-              <p className="text-sm text-slate-400">High priority</p>
-              <p className="mt-3 text-3xl font-semibold sm:text-4xl">{stats.highPriority}</p>
+              <p className="text-sm text-slate-400">Urgent</p>
+              <p className="mt-3 text-3xl font-semibold sm:text-4xl">{stats.urgent}</p>
             </div>
 
             <div className="rounded-3xl border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.2)] sm:p-6">
@@ -246,95 +448,160 @@ export default function HomePage() {
             </div>
           </section>
 
-          <section className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
-            <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-start">
-              <div>
-                <div className="inline-flex rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10">
-                  How Cooked Am I?
-                </div>
+          <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr] xl:gap-6">
+            <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                <div className="max-w-2xl">
+                  <div className="inline-flex rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10">
+                    How Cooked Am I?
+                  </div>
 
-                <h2 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
-                  Academic Risk Score
-                </h2>
+                  <h2 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
+                    Academic Risk Score
+                  </h2>
 
-                <div className="mt-5 flex items-end gap-3">
-                  <span className={`text-5xl font-semibold sm:text-6xl ${getCookedTextColor(cooked.score)}`}>
-                    {cooked.score}
-                  </span>
-                  <span className="pb-2 text-xl text-slate-500">/100</span>
-                </div>
+                  <div className="mt-5 flex items-end gap-3">
+                    <span
+                      className={`text-5xl font-semibold sm:text-6xl ${getCookedTextColor(
+                        cooked.score
+                      )}`}
+                    >
+                      {cooked.score}
+                    </span>
+                    <span className="pb-2 text-xl text-slate-500">/100</span>
+                  </div>
 
-                <p className="mt-3 text-lg font-medium text-white">
-                  Status: {cooked.status}
-                </p>
-
-                <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base sm:leading-8">
-                  {cooked.headline}
-                </p>
-
-                <div className="mt-6 h-3 w-full overflow-hidden rounded-full bg-white/10">
-                  <div
-                    className="h-full rounded-full bg-blue-400 transition-all duration-500"
-                    style={{ width: `${Math.max(6, cooked.score)}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-[#101b38] p-5 sm:p-6">
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                  What’s driving it
-                </p>
-
-                <ul className="mt-5 space-y-3">
-                  {cooked.reasons.map((reason) => (
-                    <li key={reason} className="flex items-start gap-3 text-sm text-slate-200">
-                      <span className="mt-2 h-2 w-2 rounded-full bg-blue-400" />
-                      <span>{reason}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                    Fastest recovery move
+                  <p className="mt-3 text-lg font-medium text-white">
+                    Status: {cooked.status}
                   </p>
 
-                  {bestRecoveryAction ? (
-                    <>
-                      <p className="mt-3 text-sm leading-7 text-white">
-                        {bestRecoveryAction.label}
-                      </p>
-                      <p className="mt-2 text-sm text-blue-300">
-                        Potential score drop: -{bestRecoveryAction.scoreDrop}
-                      </p>
+                  <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base sm:leading-8">
+                    {cooked.headline}
+                  </p>
 
-                      <Link
-                        href={bestRecoveryAction.route}
-                        className="mt-4 inline-flex w-full justify-center rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
-                      >
-                        Reduce My Score
-                      </Link>
-                    </>
-                  ) : (
-                    <>
-                      <p className="mt-3 text-sm leading-7 text-slate-300">
-                        You have no active recovery moves right now.
-                      </p>
+                  <p className="mt-3 text-sm text-slate-400">
+                    {getMotivationLine(cooked.score, stats.pending, stats.overdue)}
+                  </p>
 
-                      <Link
-                        href="/tasks"
-                        className="mt-4 inline-flex w-full justify-center rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
-                      >
-                        Add a Task
-                      </Link>
-                    </>
-                  )}
+                  <div className="mt-6 h-3 w-full overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${getCookedBarClass(
+                        cooked.score
+                      )}`}
+                      style={{ width: `${Math.max(6, cooked.score)}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="w-full max-w-[320px] rounded-3xl border border-white/10 bg-[#101b38] p-5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                    What’s driving it
+                  </p>
+
+                  <ul className="mt-5 space-y-3">
+                    {cooked.reasons.map((reason) => (
+                      <li key={reason} className="flex items-start gap-3 text-sm text-slate-200">
+                        <span className="mt-2 h-2 w-2 rounded-full bg-blue-400" />
+                        <span>{reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                      Fastest recovery move
+                    </p>
+
+                    {bestRecoveryAction ? (
+                      <>
+                        <p className="mt-3 text-sm leading-7 text-white">
+                          {bestRecoveryAction.label}
+                        </p>
+                        <p className="mt-2 text-sm text-blue-300">
+                          Potential score drop: -{bestRecoveryAction.scoreDrop}
+                        </p>
+
+                        <Link
+                          href={bestRecoveryAction.route}
+                          className="mt-4 inline-flex w-full justify-center rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
+                        >
+                          Reduce My Score
+                        </Link>
+                      </>
+                    ) : (
+                      <>
+                        <p className="mt-3 text-sm leading-7 text-slate-300">
+                          You have no active recovery moves right now.
+                        </p>
+
+                        <Link
+                          href="/tasks"
+                          className="mt-4 inline-flex w-full justify-center rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
+                        >
+                          Add a Task
+                        </Link>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
+
+            <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
+              <div className="flex items-center justify-between gap-4">
+                <h3 className="text-xl font-semibold sm:text-2xl">Biggest Threat</h3>
+                <Link
+                  href="/performance"
+                  className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
+                >
+                  Open dashboard
+                </Link>
+              </div>
+
+              {biggestThreat ? (
+                <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 sm:p-6">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-lg font-semibold break-words">
+                        {biggestThreat.title}
+                      </p>
+                      <p className="mt-2 text-sm text-slate-400">
+                        {biggestThreat.module}
+                      </p>
+                    </div>
+                    <span
+                      className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
+                        biggestThreat.priority
+                      )}`}
+                    >
+                      {biggestThreat.priority}
+                    </span>
+                  </div>
+
+                  <p className="mt-5 text-sm text-slate-300">
+                    Due {biggestThreat.dueDate}
+                  </p>
+
+                  <p className="mt-2 text-sm text-slate-400">
+                    {getUpcomingLabel(getDaysUntil(biggestThreat.dueDate))}
+                  </p>
+
+                  <Link
+                    href="/tasks"
+                    className="mt-6 inline-flex w-full justify-center rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400 sm:w-auto"
+                  >
+                    Go to tasks
+                  </Link>
+                </div>
+              ) : (
+                <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 text-slate-300 sm:p-6">
+                  No immediate threats right now. That is a very nice position to be in.
+                </div>
+              )}
+            </div>
           </section>
 
-          <section className="grid gap-5 xl:grid-cols-[1.35fr_0.85fr] xl:gap-6">
+          <section className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr] xl:gap-6">
             <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
               <div className="flex flex-col gap-5 sm:gap-6 md:flex-row md:items-start md:justify-between">
                 <div className="max-w-2xl">
@@ -368,19 +635,19 @@ export default function HomePage() {
               <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
                 <Link
                   href="/tasks"
-                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400"
+                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
                 >
                   Open Tasks
                 </Link>
                 <Link
                   href="/planner"
-                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400"
+                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
                 >
                   Build study plan
                 </Link>
                 <Link
                   href="/performance"
-                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400"
+                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
                 >
                   Review performance
                 </Link>
@@ -388,52 +655,119 @@ export default function HomePage() {
             </div>
 
             <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
-              <h3 className="text-xl font-semibold sm:text-2xl">Next up</h3>
+              <h3 className="text-xl font-semibold sm:text-2xl">Study Signals</h3>
 
-              {stats.nextTask ? (
-                <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 sm:p-6">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="text-lg font-semibold break-words">{stats.nextTask.title}</p>
-                      <p className="mt-2 text-sm text-slate-400">
-                        {stats.nextTask.module}
-                      </p>
-                    </div>
-                    <span
-                      className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
-                        stats.nextTask.priority
-                      )}`}
-                    >
-                      {stats.nextTask.priority}
-                    </span>
+              <div className="mt-6 grid gap-4">
+                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-4">
+                  <p className="text-sm text-slate-400">Planned hours</p>
+                  <p className="mt-2 text-3xl font-semibold">{stats.studyHours}h</p>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-4">
+                  <p className="text-sm text-slate-400">Open study blocks</p>
+                  <p className="mt-2 text-3xl font-semibold">{stats.openStudyBlocks}</p>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-4">
+                  <p className="text-sm text-slate-400">Planner completion</p>
+                  <p className="mt-2 text-3xl font-semibold">
+                    {stats.plannerCompletionRate}%
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="grid gap-5 xl:grid-cols-[1fr_1fr] xl:gap-6">
+            <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
+              <div className="flex items-center justify-between gap-4">
+                <h3 className="text-xl font-semibold sm:text-2xl">Today’s Focus</h3>
+                <Link
+                  href="/tasks"
+                  className="shrink-0 text-sm font-medium text-blue-400 transition hover:text-blue-300"
+                >
+                  Manage tasks
+                </Link>
+              </div>
+
+              <div className="mt-6 space-y-4">
+                {todayFocus.length === 0 ? (
+                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                    No active tasks right now. That board is looking clean.
                   </div>
+                ) : (
+                  todayFocus.map((task, index) => (
+                    <div
+                      key={task.id}
+                      className="rounded-2xl border border-white/10 bg-[#101b38] p-4 sm:p-5"
+                    >
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                            Focus {index + 1}
+                          </p>
+                          <p className="mt-2 text-base font-medium break-words text-white">
+                            {task.title}
+                          </p>
+                          <p className="mt-2 text-sm text-slate-400">{task.module}</p>
+                          <p className="mt-2 text-sm text-slate-500">
+                            {getUpcomingLabel(getDaysUntil(task.dueDate))}
+                          </p>
+                        </div>
 
-                  <p className="mt-5 text-sm text-slate-300">
-                    Due {stats.nextTask.dueDate}
-                  </p>
+                        <span
+                          className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
+                            task.priority
+                          )}`}
+                        >
+                          {task.priority}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
 
-                  <p className="mt-2 text-sm text-slate-400">
-                    {getDaysUntil(stats.nextTask.dueDate) < 0
-                      ? "This task is overdue."
-                      : getDaysUntil(stats.nextTask.dueDate) === 0
-                      ? "Due today."
-                      : getDaysUntil(stats.nextTask.dueDate) === 1
-                      ? "Due tomorrow."
-                      : `Due in ${getDaysUntil(stats.nextTask.dueDate)} days.`}
-                  </p>
-
-                  <Link
-                    href="/tasks"
-                    className="mt-6 inline-flex w-full justify-center rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400 sm:w-auto"
-                  >
-                    Go to tasks
-                  </Link>
+            <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
+              <div className="flex items-center justify-between gap-4">
+                <h3 className="text-xl font-semibold sm:text-2xl">Quick Access</h3>
+                <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
+                  Move faster
                 </div>
-              ) : (
-                <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 text-slate-300 sm:p-6">
-                  No pending tasks yet. Add your first task to start building momentum.
-                </div>
-              )}
+              </div>
+
+              <div className="mt-6 grid gap-4">
+                <Link
+                  href="/tasks"
+                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 transition hover:border-blue-400 hover:bg-[#122145] sm:p-5"
+                >
+                  <p className="text-lg font-medium">Tasks</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    Add work, manage deadlines, and update progress.
+                  </p>
+                </Link>
+
+                <Link
+                  href="/planner"
+                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 transition hover:border-blue-400 hover:bg-[#122145] sm:p-5"
+                >
+                  <p className="text-lg font-medium">Planner</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    Turn your workload into realistic study blocks.
+                  </p>
+                </Link>
+
+                <Link
+                  href="/performance"
+                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 transition hover:border-blue-400 hover:bg-[#122145] sm:p-5"
+                >
+                  <p className="text-lg font-medium">Performance</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    Track pressure, momentum, and what to fix next.
+                  </p>
+                </Link>
+              </div>
             </div>
           </section>
 
@@ -490,38 +824,32 @@ export default function HomePage() {
             </div>
 
             <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
-              <h3 className="text-xl font-semibold sm:text-2xl">Quick Access</h3>
+              <h3 className="text-xl font-semibold sm:text-2xl">Why this sticks</h3>
 
-              <div className="mt-6 grid gap-4">
-                <Link
-                  href="/tasks"
-                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 transition hover:border-blue-400 sm:p-5"
-                >
-                  <p className="text-lg font-medium">Tasks</p>
+              <div className="mt-6 space-y-4">
+                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
+                  <p className="text-lg font-medium">Pressure becomes visible</p>
                   <p className="mt-2 text-sm leading-6 text-slate-400">
-                    Add work, manage deadlines, and update progress.
+                    You can instantly see when deadlines, workload, and missed study
+                    time are starting to pile up.
                   </p>
-                </Link>
+                </div>
 
-                <Link
-                  href="/planner"
-                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 transition hover:border-blue-400 sm:p-5"
-                >
-                  <p className="text-lg font-medium">Planner</p>
+                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
+                  <p className="text-lg font-medium">Recovery feels real</p>
                   <p className="mt-2 text-sm leading-6 text-slate-400">
-                    Build realistic study blocks around your workload.
+                    The best recovery move gives users a clear action that actually
+                    lowers the score.
                   </p>
-                </Link>
+                </div>
 
-                <Link
-                  href="/performance"
-                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 transition hover:border-blue-400 sm:p-5"
-                >
-                  <p className="text-lg font-medium">Performance</p>
+                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
+                  <p className="text-lg font-medium">It’s screenshot-worthy</p>
                   <p className="mt-2 text-sm leading-6 text-slate-400">
-                    Track progress, completion trends, and momentum.
+                    The cooked score gives LockdIn a memorable hook people will want
+                    to show friends.
                   </p>
-                </Link>
+                </div>
               </div>
             </div>
           </section>
