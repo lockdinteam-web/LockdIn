@@ -6,9 +6,9 @@ type AppShellProps = {
 
 export default function AppShell({ children }: AppShellProps) {
   return (
-    <div className="flex min-h-screen bg-slate-950">
+    <div className="flex min-h-screen overflow-x-hidden bg-slate-950">
       <Sidebar />
-      <main className="flex-1">{children}</main>
+      <main className="min-w-0 flex-1">{children}</main>
     </div>
   );
 }
