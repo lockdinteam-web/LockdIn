@@ -40,6 +40,17 @@ type RecoveryAction = {
   route: string;
 };
 
+type ScorePreview = {
+  cookedDelta: number;
+  momentumDelta: number;
+  consistencyDelta: number;
+};
+
+type RankedRecoveryAction = RecoveryAction & {
+  preview: ScorePreview;
+  impactScore: number;
+};
+
 type ActiveFilter =
   | "all"
   | "cooked"
@@ -229,6 +240,59 @@ function calculateCookedScore(
   };
 }
 
+function calculateMomentumScore(tasks: Task[], studyPlan: StudyBlock[]) {
+  const totalTasks = tasks.length;
+  const completedTasks = tasks.filter((task) => task.completed).length;
+  const overdueTasks = tasks.filter(
+    (task) => !task.completed && getDaysUntil(task.dueDate) < 0
+  ).length;
+  const highPriorityOpen = tasks.filter(
+    (task) => !task.completed && task.priority === "High"
+  ).length;
+
+  const totalSessions = studyPlan.length;
+  const completedSessions = studyPlan.filter((session) => session.completed).length;
+
+  const taskCompletionRate =
+    totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+  const plannerCompletionRate =
+    totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : 0;
+
+  const momentumBase = Math.round(
+    taskCompletionRate * 0.5 +
+      plannerCompletionRate * 0.25 +
+      Math.max(0, 25 - overdueTasks * 8) +
+      Math.max(0, 15 - highPriorityOpen * 4)
+  );
+
+  return Math.max(0, Math.min(100, momentumBase));
+}
+
+function calculateConsistencyScore(tasks: Task[], studyPlan: StudyBlock[]) {
+  const overdueTasks = tasks.filter(
+    (task) => !task.completed && getDaysUntil(task.dueDate) < 0
+  ).length;
+
+  const dueTodayOrTomorrow = tasks.filter((task) => {
+    if (task.completed) return false;
+    const days = getDaysUntil(task.dueDate);
+    return days >= 0 && days <= 1;
+  }).length;
+
+  const pendingTasks = tasks.filter((task) => !task.completed).length;
+  const openSessions = studyPlan.filter((session) => !session.completed).length;
+
+  const consistencyBase = Math.round(
+    100 -
+      overdueTasks * 18 -
+      dueTodayOrTomorrow * 8 -
+      openSessions * 3 -
+      Math.max(0, pendingTasks - 3) * 4
+  );
+
+  return Math.max(0, Math.min(100, consistencyBase));
+}
+
 function getBestRecoveryAction(
   tasks: Task[],
   studyBlocks: StudyBlock[]
@@ -285,36 +349,140 @@ function getBestRecoveryAction(
   return actions[0];
 }
 
-function getScoreTone(score: number) {
+function getRankedRecoveryActions(
+  tasks: Task[],
+  studyBlocks: StudyBlock[]
+): RankedRecoveryAction[] {
+  const currentCooked = calculateCookedScore(tasks, studyBlocks).score;
+  const currentMomentum = calculateMomentumScore(tasks, studyBlocks);
+  const currentConsistency = calculateConsistencyScore(tasks, studyBlocks);
+
+  const actions: RankedRecoveryAction[] = [];
+
+  for (const task of tasks) {
+    if (task.completed) continue;
+
+    const simulatedTasks = tasks.map((currentTask) =>
+      currentTask.id === task.id ? { ...currentTask, completed: true } : currentTask
+    );
+
+    const nextCooked = calculateCookedScore(simulatedTasks, studyBlocks).score;
+    const nextMomentum = calculateMomentumScore(simulatedTasks, studyBlocks);
+    const nextConsistency = calculateConsistencyScore(simulatedTasks, studyBlocks);
+
+    const preview = {
+      cookedDelta: currentCooked - nextCooked,
+      momentumDelta: nextMomentum - currentMomentum,
+      consistencyDelta: nextConsistency - currentConsistency,
+    };
+
+    const impactScore =
+      preview.cookedDelta * 3 +
+      preview.momentumDelta * 2 +
+      preview.consistencyDelta * 2;
+
+    actions.push({
+      type: "task",
+      id: task.id,
+      label: `Finish "${task.title}"`,
+      scoreDrop: Math.max(0, currentCooked - nextCooked),
+      route: "/tasks",
+      preview,
+      impactScore,
+    });
+  }
+
+  for (const block of studyBlocks) {
+    if (block.completed) continue;
+
+    const simulatedBlocks = studyBlocks.map((currentBlock) =>
+      currentBlock.id === block.id ? { ...currentBlock, completed: true } : currentBlock
+    );
+
+    const nextCooked = calculateCookedScore(tasks, simulatedBlocks).score;
+    const nextMomentum = calculateMomentumScore(tasks, simulatedBlocks);
+    const nextConsistency = calculateConsistencyScore(tasks, simulatedBlocks);
+
+    const preview = {
+      cookedDelta: currentCooked - nextCooked,
+      momentumDelta: nextMomentum - currentMomentum,
+      consistencyDelta: nextConsistency - currentConsistency,
+    };
+
+    const impactScore =
+      preview.cookedDelta * 3 +
+      preview.momentumDelta * 2 +
+      preview.consistencyDelta * 2;
+
+    actions.push({
+      type: "studyBlock",
+      id: block.id,
+      label: `Complete ${block.subject} study block`,
+      scoreDrop: Math.max(0, currentCooked - nextCooked),
+      route: "/planner",
+      preview,
+      impactScore,
+    });
+  }
+
+  return actions
+    .sort((a, b) => {
+      if (b.impactScore !== a.impactScore) return b.impactScore - a.impactScore;
+      if (b.preview.cookedDelta !== a.preview.cookedDelta) {
+        return b.preview.cookedDelta - a.preview.cookedDelta;
+      }
+      return a.label.localeCompare(b.label);
+    })
+    .slice(0, 3);
+}
+
+function getCookedTone(score: number) {
   if (score >= 80) {
     return {
-      label: "Critical",
       pill: "bg-rose-500/15 text-rose-300",
       bar: "bg-rose-500",
-      ring: "ring-rose-500/30",
     };
   }
   if (score >= 60) {
     return {
-      label: "High",
       pill: "bg-orange-500/15 text-orange-300",
       bar: "bg-orange-500",
-      ring: "ring-orange-500/30",
     };
   }
   if (score >= 40) {
     return {
-      label: "Moderate",
       pill: "bg-amber-500/15 text-amber-300",
       bar: "bg-amber-500",
-      ring: "ring-amber-500/30",
     };
   }
   return {
-    label: "Healthy",
     pill: "bg-emerald-500/15 text-emerald-300",
     bar: "bg-emerald-500",
-    ring: "ring-emerald-500/30",
+  };
+}
+
+function getPositiveScoreTone(score: number) {
+  if (score >= 80) {
+    return {
+      pill: "bg-emerald-500/15 text-emerald-300",
+      bar: "bg-emerald-500",
+    };
+  }
+  if (score >= 60) {
+    return {
+      pill: "bg-lime-500/15 text-lime-300",
+      bar: "bg-lime-500",
+    };
+  }
+  if (score >= 40) {
+    return {
+      pill: "bg-amber-500/15 text-amber-300",
+      bar: "bg-amber-500",
+    };
+  }
+  return {
+    pill: "bg-rose-500/15 text-rose-300",
+    bar: "bg-rose-500",
   };
 }
 
@@ -393,11 +561,7 @@ function ScoreCard({
       }`}
     >
       <div className="flex items-start justify-between gap-4">
-        <button
-          type="button"
-          onClick={onActivate}
-          className="flex-1 text-left"
-        >
+        <button type="button" onClick={onActivate} className="flex-1 text-left">
           <p className="text-sm text-slate-400">{title}</p>
           <div className="mt-3 flex items-end gap-3">
             <p className="text-4xl font-bold">{score}</p>
@@ -410,11 +574,7 @@ function ScoreCard({
         <InfoIconButton onClick={onToggleInfo} isOpen={infoOpen} />
       </div>
 
-      <button
-        type="button"
-        onClick={onActivate}
-        className="mt-4 block w-full text-left"
-      >
+      <button type="button" onClick={onActivate} className="mt-4 block w-full text-left">
         <div className="h-2 rounded-full bg-slate-800">
           <div
             className={`h-2 rounded-full ${barClass} transition-all duration-500`}
@@ -443,6 +603,40 @@ function ScoreCard({
         </ul>
       </div>
     </div>
+  );
+}
+
+function DeltaPill({
+  label,
+  value,
+  positiveGood = true,
+}: {
+  label: string;
+  value: number;
+  positiveGood?: boolean;
+}) {
+  if (value === 0) {
+    return (
+      <span className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-400">
+        {label} 0
+      </span>
+    );
+  }
+
+  const isPositive = value > 0;
+  const good = positiveGood ? isPositive : !isPositive;
+
+  return (
+    <span
+      className={`rounded-full px-3 py-1 text-xs font-medium ${
+        good
+          ? "bg-emerald-500/15 text-emerald-300"
+          : "bg-rose-500/15 text-rose-300"
+      }`}
+    >
+      {label} {isPositive ? "+" : ""}
+      {value}
+    </span>
   );
 }
 
@@ -476,12 +670,14 @@ export default function PerformancePage() {
       return days >= 0 && days <= 1;
     }).length;
 
+    const dueThisWeek = tasks.filter((task) => {
+      if (task.completed) return false;
+      const days = getDaysUntil(task.dueDate);
+      return days >= 0 && days <= 7;
+    }).length;
+
     const highPriorityOpen = tasks.filter(
       (task) => !task.completed && task.priority === "High"
-    ).length;
-
-    const mediumPriorityOpen = tasks.filter(
-      (task) => !task.completed && task.priority === "Medium"
     ).length;
 
     const taskCompletionRate =
@@ -501,26 +697,38 @@ export default function PerformancePage() {
       ) / 10;
 
     const cooked = calculateCookedScore(tasks, studyPlan);
+    const momentumScore = calculateMomentumScore(tasks, studyPlan);
+    const consistencyScore = calculateConsistencyScore(tasks, studyPlan);
     const bestRecoveryAction = getBestRecoveryAction(tasks, studyPlan);
+    const rankedRecoveryActions = getRankedRecoveryActions(tasks, studyPlan);
 
-    const momentumBase = Math.round(
-      taskCompletionRate * 0.5 +
-        plannerCompletionRate * 0.25 +
-        Math.max(0, 25 - overdueTasks * 8) +
-        Math.max(0, 15 - highPriorityOpen * 4)
-    );
+    const biggestThreat =
+      tasks
+        .filter((task) => !task.completed)
+        .sort((a, b) => {
+          const aImpact =
+            getDeadlineUrgencyScore(getDaysUntil(a.dueDate), a.priority) +
+            priorityWeight(a.priority) * 5;
+          const bImpact =
+            getDeadlineUrgencyScore(getDaysUntil(b.dueDate), b.priority) +
+            priorityWeight(b.priority) * 5;
+          return bImpact - aImpact;
+        })[0] ?? null;
 
-    const momentumScore = Math.max(0, Math.min(100, momentumBase));
-
-    const consistencyBase = Math.round(
-      100 -
-        overdueTasks * 18 -
-        dueTodayOrTomorrow * 8 -
-        openSessions * 3 -
-        Math.max(0, pendingTasks - 3) * 4
-    );
-
-    const consistencyScore = Math.max(0, Math.min(100, consistencyBase));
+    const todayFocusTasks = tasks
+      .filter((task) => !task.completed)
+      .sort((a, b) => {
+        const aDays = getDaysUntil(a.dueDate);
+        const bDays = getDaysUntil(b.dueDate);
+        const aValue =
+          (aDays < 0 ? 100 : aDays === 0 ? 90 : aDays === 1 ? 75 : aDays <= 3 ? 60 : 20) +
+          priorityWeight(a.priority) * 20;
+        const bValue =
+          (bDays < 0 ? 100 : bDays === 0 ? 90 : bDays === 1 ? 75 : bDays <= 3 ? 60 : 20) +
+          priorityWeight(b.priority) * 20;
+        return bValue - aValue;
+      })
+      .slice(0, 3);
 
     const moduleMap = new Map<
       string,
@@ -715,7 +923,11 @@ export default function PerformancePage() {
     const filteredSessions = (() => {
       if (activeFilter === "all") return recentSessions;
 
-      if (activeFilter === "momentum" || activeFilter === "consistency" || activeFilter === "cooked") {
+      if (
+        activeFilter === "momentum" ||
+        activeFilter === "consistency" ||
+        activeFilter === "cooked"
+      ) {
         return studyPlan.filter((session) => !session.completed).slice(0, 6);
       }
 
@@ -728,8 +940,8 @@ export default function PerformancePage() {
       pendingTasks,
       overdueTasks,
       dueTodayOrTomorrow,
+      dueThisWeek,
       highPriorityOpen,
-      mediumPriorityOpen,
       taskCompletionRate,
       totalSessions,
       completedSessions,
@@ -740,6 +952,9 @@ export default function PerformancePage() {
       consistencyScore,
       cooked,
       bestRecoveryAction,
+      rankedRecoveryActions,
+      biggestThreat,
+      todayFocusTasks,
       moduleStats,
       mostPressuredModule,
       strongestModule,
@@ -753,9 +968,9 @@ export default function PerformancePage() {
     };
   }, [tasks, studyPlan, activeFilter]);
 
-  const cookedTone = getScoreTone(analytics.cooked.score);
-  const momentumTone = getScoreTone(analytics.momentumScore);
-  const consistencyTone = getScoreTone(analytics.consistencyScore);
+  const cookedTone = getCookedTone(analytics.cooked.score);
+  const momentumTone = getPositiveScoreTone(analytics.momentumScore);
+  const consistencyTone = getPositiveScoreTone(analytics.consistencyScore);
 
   function toggleInfoCard(card: "cooked" | "momentum" | "consistency") {
     setOpenInfoCard((current) => (current === card ? null : card));
@@ -804,9 +1019,7 @@ export default function PerformancePage() {
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
               <p className="text-sm text-slate-400">Task Completion</p>
-              <p className="mt-3 text-4xl font-bold">
-                {analytics.taskCompletionRate}%
-              </p>
+              <p className="mt-3 text-4xl font-bold">{analytics.taskCompletionRate}%</p>
             </div>
 
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
@@ -818,9 +1031,7 @@ export default function PerformancePage() {
 
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
               <p className="text-sm text-slate-400">Planned Hours</p>
-              <p className="mt-3 text-4xl font-bold">
-                {analytics.totalPlannedHours}h
-              </p>
+              <p className="mt-3 text-4xl font-bold">{analytics.totalPlannedHours}h</p>
             </div>
 
             <button
@@ -847,9 +1058,7 @@ export default function PerformancePage() {
               <div className="inline-flex rounded-full bg-blue-500/15 px-3 py-1 text-xs font-medium text-blue-300">
                 AI Performance Coach
               </div>
-              <h2 className="mt-4 text-3xl font-semibold">
-                {analytics.coachTitle}
-              </h2>
+              <h2 className="mt-4 text-3xl font-semibold">{analytics.coachTitle}</h2>
               <p className="mt-4 max-w-3xl text-base leading-8 text-slate-300">
                 {analytics.coachSummary}
               </p>
@@ -975,8 +1184,8 @@ export default function PerformancePage() {
               infoOpen={openInfoCard === "consistency"}
               onToggleInfo={() => toggleInfoCard("consistency")}
               infoTitle="How Consistency Score is calculated"
-              infoBody="Consistency Score starts high and drops when overdue work appears, tasks due today or tomorrow pile up, too many sessions remain incomplete, and your active task workload becomes chaotic. It measures how steady and repeatable your work pattern is."
-              subtitle="Consistency drops when urgent work piles up and your planner stops turning into action."
+              infoBody="Consistency Score starts high and drops when overdue work appears, tasks due today or tomorrow pile up, too many sessions remain incomplete, and your active task workload becomes chaotic. A high score means your work pattern is steady and under control."
+              subtitle="Consistency measures how steady your workload and study execution feel over time."
               tips={[
                 "Avoid overdue work entirely",
                 "Reduce open tasks due today or tomorrow",
@@ -1014,45 +1223,176 @@ export default function PerformancePage() {
             </div>
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr_1fr]">
-            <button
-              type="button"
-              onClick={() => handleFilterClick("overdue")}
-              className={`rounded-3xl border bg-slate-900 p-6 text-left transition ${
-                activeFilter === "overdue"
-                  ? "border-blue-500/40 ring-1 ring-blue-500/30"
-                  : "border-slate-800 hover:border-slate-700"
-              }`}
-            >
-              <p className="text-sm text-slate-400">Overdue tasks</p>
-              <p className="mt-3 text-4xl font-bold">{analytics.overdueTasks}</p>
-            </button>
+          <section className="grid gap-6 xl:grid-cols-[1fr_1fr_1fr]">
+            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
+              <p className="text-sm text-slate-400">Biggest Threat</p>
+              {analytics.biggestThreat ? (
+                <>
+                  <p className="mt-3 text-xl font-semibold">{analytics.biggestThreat.title}</p>
+                  <p className="mt-2 text-sm text-slate-400">
+                    {analytics.biggestThreat.module} • Due {analytics.biggestThreat.dueDate}
+                  </p>
+                  <div className="mt-4">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-medium ${getPriorityClass(
+                        analytics.biggestThreat.priority
+                      )}`}
+                    >
+                      {analytics.biggestThreat.priority}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <p className="mt-3 text-slate-400">No immediate threats right now.</p>
+              )}
+            </div>
 
-            <button
-              type="button"
-              onClick={() => handleFilterClick("urgent")}
-              className={`rounded-3xl border bg-slate-900 p-6 text-left transition ${
-                activeFilter === "urgent"
-                  ? "border-blue-500/40 ring-1 ring-blue-500/30"
-                  : "border-slate-800 hover:border-slate-700"
-              }`}
-            >
-              <p className="text-sm text-slate-400">Due today / tomorrow</p>
-              <p className="mt-3 text-4xl font-bold">{analytics.dueTodayOrTomorrow}</p>
-            </button>
+            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
+              <p className="text-sm text-slate-400">Today Focus</p>
+              <div className="mt-4 space-y-3">
+                {analytics.todayFocusTasks.length === 0 ? (
+                  <p className="text-slate-400">No urgent focus items. Very composed.</p>
+                ) : (
+                  analytics.todayFocusTasks.map((task, index) => (
+                    <div
+                      key={task.id}
+                      className="rounded-2xl border border-white/5 bg-slate-950/70 p-4"
+                    >
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                        Priority {index + 1}
+                      </p>
+                      <p className="mt-2 font-medium text-white">{task.title}</p>
+                      <p className="mt-1 text-sm text-slate-400">
+                        {task.module} • Due {task.dueDate}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => handleFilterClick("highPriority")}
-              className={`rounded-3xl border bg-slate-900 p-6 text-left transition ${
-                activeFilter === "highPriority"
-                  ? "border-blue-500/40 ring-1 ring-blue-500/30"
-                  : "border-slate-800 hover:border-slate-700"
-              }`}
-            >
-              <p className="text-sm text-slate-400">High priority open</p>
-              <p className="mt-3 text-4xl font-bold">{analytics.highPriorityOpen}</p>
-            </button>
+            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
+              <p className="text-sm text-slate-400">Pressure Snapshot</p>
+
+              <div className="mt-5 space-y-4">
+                <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                    Overdue tasks
+                  </p>
+                  <p className="mt-2 text-3xl font-bold">{analytics.overdueTasks}</p>
+                </div>
+
+                <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                    Due this week
+                  </p>
+                  <p className="mt-2 text-3xl font-bold">{analytics.dueThisWeek}</p>
+                </div>
+
+                <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                    Active workload
+                  </p>
+                  <p className="mt-2 text-3xl font-bold">{analytics.pendingTasks}</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-semibold">Top Recovery Moves</h2>
+                  <p className="mt-2 text-sm text-slate-400">
+                    The fastest ways to improve your scores right now
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 space-y-4">
+                {analytics.rankedRecoveryActions.length === 0 ? (
+                  <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
+                    Nothing to recover right now. You are suspiciously locked in.
+                  </div>
+                ) : (
+                  analytics.rankedRecoveryActions.map((action, index) => (
+                    <div
+                      key={`${action.type}-${action.id}`}
+                      className="rounded-2xl border border-slate-800 bg-slate-950 p-5"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                            Move {index + 1}
+                          </p>
+                          <p className="mt-2 text-base font-semibold text-white">
+                            {action.label}
+                          </p>
+                          <p className="mt-2 text-sm text-slate-400">
+                            Route: {action.route}
+                          </p>
+                        </div>
+
+                        <span className="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-medium text-blue-300">
+                          Impact {action.impactScore}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <DeltaPill
+                          label="Cooked"
+                          value={-action.preview.cookedDelta}
+                          positiveGood={false}
+                        />
+                        <DeltaPill
+                          label="Momentum"
+                          value={action.preview.momentumDelta}
+                        />
+                        <DeltaPill
+                          label="Consistency"
+                          value={action.preview.consistencyDelta}
+                        />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8">
+              <h2 className="text-2xl font-semibold">Pressure Signals</h2>
+
+              <div className="mt-6 space-y-4">
+                <div className="rounded-2xl bg-slate-950 p-5">
+                  <p className="text-sm text-slate-400">Most Pressured Module</p>
+                  <p className="mt-2 text-lg font-semibold">
+                    {analytics.mostPressuredModule?.module ?? "No data yet"}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-slate-950 p-5">
+                  <p className="text-sm text-slate-400">Strongest Module</p>
+                  <p className="mt-2 text-lg font-semibold">
+                    {analytics.strongestModule?.module ?? "No data yet"}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-slate-950 p-5">
+                  <p className="text-sm text-slate-400">High Priority Open</p>
+                  <p className="mt-2 text-lg font-semibold">
+                    {analytics.highPriorityOpen}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-slate-950 p-5">
+                  <p className="text-sm text-slate-400">Sessions Planned</p>
+                  <p className="mt-2 text-lg font-semibold">
+                    {analytics.totalSessions}
+                  </p>
+                </div>
+              </div>
+            </div>
           </section>
 
           <section className="grid gap-6 xl:grid-cols-2">
@@ -1227,59 +1567,35 @@ export default function PerformancePage() {
               </div>
             </div>
 
-            <div className="space-y-6">
-              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8">
-                <h2 className="text-2xl font-semibold">Pressure Signals</h2>
+            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8">
+              <h2 className="text-2xl font-semibold">Planner Signals</h2>
 
-                <div className="mt-6 space-y-4">
-                  <div className="rounded-2xl bg-slate-950 p-5">
-                    <p className="text-sm text-slate-400">Most Pressured Module</p>
-                    <p className="mt-2 text-lg font-semibold">
-                      {analytics.mostPressuredModule?.module ?? "No data yet"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl bg-slate-950 p-5">
-                    <p className="text-sm text-slate-400">Strongest Module</p>
-                    <p className="mt-2 text-lg font-semibold">
-                      {analytics.strongestModule?.module ?? "No data yet"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl bg-slate-950 p-5">
-                    <p className="text-sm text-slate-400">High Priority Open</p>
-                    <p className="mt-2 text-lg font-semibold">
-                      {analytics.highPriorityOpen}
-                    </p>
-                  </div>
+              <div className="mt-6 space-y-4">
+                <div className="rounded-2xl bg-slate-950 p-5">
+                  <p className="text-sm text-slate-400">Sessions Completed</p>
+                  <p className="mt-2 text-lg font-semibold">
+                    {analytics.completedSessions}
+                  </p>
                 </div>
-              </div>
 
-              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8">
-                <h2 className="text-2xl font-semibold">Planner Signals</h2>
+                <div className="rounded-2xl bg-slate-950 p-5">
+                  <p className="text-sm text-slate-400">Open Study Blocks</p>
+                  <p className="mt-2 text-lg font-semibold">{analytics.openSessions}</p>
+                </div>
 
-                <div className="mt-6 space-y-4">
-                  <div className="rounded-2xl bg-slate-950 p-5">
-                    <p className="text-sm text-slate-400">Sessions Planned</p>
-                    <p className="mt-2 text-lg font-semibold">
-                      {analytics.totalSessions}
-                    </p>
-                  </div>
+                <div className="rounded-2xl bg-slate-950 p-5">
+                  <p className="text-sm text-slate-400">Open Workload</p>
+                  <p className="mt-2 text-lg font-semibold">
+                    {analytics.pendingTasks} active task
+                    {analytics.pendingTasks === 1 ? "" : "s"}
+                  </p>
+                </div>
 
-                  <div className="rounded-2xl bg-slate-950 p-5">
-                    <p className="text-sm text-slate-400">Sessions Completed</p>
-                    <p className="mt-2 text-lg font-semibold">
-                      {analytics.completedSessions}
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl bg-slate-950 p-5">
-                    <p className="text-sm text-slate-400">Open Workload</p>
-                    <p className="mt-2 text-lg font-semibold">
-                      {analytics.pendingTasks} active task
-                      {analytics.pendingTasks === 1 ? "" : "s"}
-                    </p>
-                  </div>
+                <div className="rounded-2xl bg-slate-950 p-5">
+                  <p className="text-sm text-slate-400">Due Today / Tomorrow</p>
+                  <p className="mt-2 text-lg font-semibold">
+                    {analytics.dueTodayOrTomorrow}
+                  </p>
                 </div>
               </div>
             </div>
