@@ -9,6 +9,7 @@ const links = [
   { href: "/tasks", label: "Tasks" },
   { href: "/planner", label: "Planner" },
   { href: "/performance", label: "Performance" },
+  { href: "/degree-tracker", label: "Degree Tracker" },
 ];
 
 export default function Sidebar() {
