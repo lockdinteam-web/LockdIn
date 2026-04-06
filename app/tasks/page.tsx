@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { useTasks } from "@/components/TasksProvider";
 import { supabase } from "@/lib/supabase";
 import {
   CheckCircle2,
@@ -26,10 +25,20 @@ type Task = {
   completed: boolean;
 };
 
-export default function TasksPage() {
-  const { tasks: providerTasks, loading, refreshTasks } = useTasks();
+type DatabaseTask = {
+  id: string;
+  user_id: string;
+  title: string;
+  module: string;
+  due_date: string;
+  priority: Priority;
+  completed: boolean;
+  created_at: string;
+};
 
-  const [authChecked, setAuthChecked] = useState(false);
+export default function TasksPage() {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [title, setTitle] = useState("");
   const [module, setModule] = useState("");
@@ -37,33 +46,58 @@ export default function TasksPage() {
   const [priority, setPriority] = useState<Priority>("Medium");
 
   useEffect(() => {
-    async function checkUser() {
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser();
+    let mounted = true;
 
-      if (error || !user) {
-        window.location.href = "/login";
-        return;
+    async function loadTasks() {
+      try {
+        if (mounted) setLoading(true);
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          window.location.href = "/login";
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("tasks")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          console.error("Error loading tasks:", error.message);
+          if (mounted) setTasks([]);
+          return;
+        }
+
+        const mappedTasks: Task[] = (data as DatabaseTask[]).map((task) => ({
+          id: task.id,
+          title: task.title,
+          module: task.module,
+          dueDate: task.due_date,
+          priority: task.priority,
+          completed: task.completed,
+        }));
+
+        if (mounted) setTasks(mappedTasks);
+      } catch (error) {
+        console.error("Unexpected error loading tasks:", error);
+        if (mounted) setTasks([]);
+      } finally {
+        if (mounted) setLoading(false);
       }
-
-      setAuthChecked(true);
     }
 
-    checkUser();
-  }, []);
+    loadTasks();
 
-  const tasks = useMemo<Task[]>(() => {
-    return (providerTasks as any[]).map((task) => ({
-      id: task.id,
-      title: task.title,
-      module: task.module,
-      dueDate: task.dueDate ?? task.due_date ?? "",
-      priority: task.priority,
-      completed: task.completed,
-    }));
-  }, [providerTasks]);
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   async function handleAddTask(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -80,37 +114,51 @@ export default function TasksPage() {
       return;
     }
 
-    const { error } = await supabase.from("tasks").insert([
-      {
-        user_id: user.id,
-        title: title.trim(),
-        module: module.trim(),
-        due_date: dueDate,
-        priority,
-        completed: false,
-      },
-    ]);
+    const { data, error } = await supabase
+      .from("tasks")
+      .insert([
+        {
+          user_id: user.id,
+          title: title.trim(),
+          module: module.trim(),
+          due_date: dueDate,
+          priority,
+          completed: false,
+        },
+      ])
+      .select()
+      .single();
 
     if (error) {
       console.error("Error adding task:", error.message);
       return;
     }
 
+    const newTask: Task = {
+      id: data.id,
+      title: data.title,
+      module: data.module,
+      dueDate: data.due_date,
+      priority: data.priority,
+      completed: data.completed,
+    };
+
+    setTasks((prev) => [newTask, ...prev]);
     setTitle("");
     setModule("");
     setDueDate("");
     setPriority("Medium");
-
-    await refreshTasks();
   }
 
   async function toggleTask(id: string) {
     const currentTask = tasks.find((task) => task.id === id);
     if (!currentTask) return;
 
+    const newCompletedValue = !currentTask.completed;
+
     const { error } = await supabase
       .from("tasks")
-      .update({ completed: !currentTask.completed })
+      .update({ completed: newCompletedValue })
       .eq("id", id);
 
     if (error) {
@@ -118,7 +166,11 @@ export default function TasksPage() {
       return;
     }
 
-    await refreshTasks();
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === id ? { ...task, completed: newCompletedValue } : task
+      )
+    );
   }
 
   async function deleteTask(id: string) {
@@ -129,7 +181,7 @@ export default function TasksPage() {
       return;
     }
 
-    await refreshTasks();
+    setTasks((prev) => prev.filter((task) => task.id !== id));
   }
 
   async function handleLogout() {
@@ -170,23 +222,6 @@ export default function TasksPage() {
       month: "short",
       year: "numeric",
     });
-  }
-
-  if (!authChecked || loading) {
-    return (
-      <AppShell>
-        <div className="min-h-screen bg-slate-950 text-white">
-          <div className="mx-auto max-w-7xl px-6 py-10 md:px-8 xl:px-10">
-            <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-10 text-center">
-              <h3 className="text-2xl font-semibold">Loading tasks...</h3>
-              <p className="mt-3 text-slate-400">
-                Pulling your tasks from your account.
-              </p>
-            </div>
-          </div>
-        </div>
-      </AppShell>
-    );
   }
 
   return (
@@ -337,7 +372,14 @@ export default function TasksPage() {
           </form>
 
           <div className="space-y-4">
-            {tasks.length === 0 ? (
+            {loading ? (
+              <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-10 text-center">
+                <h3 className="text-2xl font-semibold">Loading tasks...</h3>
+                <p className="mt-3 text-slate-400">
+                  Pulling your tasks from your account.
+                </p>
+              </div>
+            ) : tasks.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-900/70 p-10 text-center">
                 <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-800">
                   <ClipboardList className="h-8 w-8 text-slate-400" />
@@ -361,7 +403,9 @@ export default function TasksPage() {
                         onClick={() => toggleTask(task.id)}
                         className="mt-1 rounded-full transition hover:scale-105"
                         aria-label={
-                          task.completed ? "Mark as incomplete" : "Mark as complete"
+                          task.completed
+                            ? "Mark as incomplete"
+                            : "Mark as complete"
                         }
                       >
                         {task.completed ? (
