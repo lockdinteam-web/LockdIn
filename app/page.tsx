@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useTasks } from "@/components/TasksProvider";
 import { supabase } from "@/lib/supabase";
 import {
@@ -129,6 +130,7 @@ function getHeroSubtitle(score: number) {
 }
 
 export default function HomePage() {
+  const router = useRouter();
   const { tasks: providerTasks, loading } = useTasks();
   const [studyBlocks, setStudyBlocks] = useState<StudyBlock[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -138,26 +140,51 @@ export default function HomePage() {
       safeParseArray<StudyBlock>(localStorage.getItem(STUDY_PLAN_STORAGE_KEY))
     );
 
-    async function checkAuth() {
+    async function checkAuthAndProfile() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
       setIsLoggedIn(!!user);
+
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (!profile) {
+        router.push("/onboarding");
+      }
     }
 
-    checkAuth();
+    checkAuthAndProfile();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsLoggedIn(!!session?.user);
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const user = session?.user ?? null;
+      setIsLoggedIn(!!user);
+
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (!profile) {
+        router.push("/onboarding");
+      }
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [router]);
 
   const tasks = useMemo<HomeTask[]>(() => {
     return (providerTasks as any[]).map((task) => ({
