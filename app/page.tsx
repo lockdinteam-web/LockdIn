@@ -3,6 +3,11 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import {
+  calculateCookedScore,
+  getBestRecoveryAction,
+  type StudyBlock,
+} from "@/lib/calculateCookedScore";
 
 type Priority = "High" | "Medium" | "Low";
 
@@ -16,6 +21,7 @@ type Task = {
 };
 
 const STORAGE_KEY = "lockdin_tasks";
+const STUDY_PLAN_STORAGE_KEY = "lockdin_study_plan";
 
 function getDaysUntil(dateString: string) {
   const today = new Date();
@@ -38,17 +44,35 @@ function getPriorityBadge(priority: Priority) {
   return "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/20";
 }
 
+function getCookedTextColor(score: number) {
+  if (score <= 20) return "text-emerald-300";
+  if (score <= 40) return "text-green-300";
+  if (score <= 60) return "text-amber-300";
+  if (score <= 80) return "text-orange-300";
+  return "text-rose-300";
+}
+
 export default function HomePage() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [studyBlocks, setStudyBlocks] = useState<StudyBlock[]>([]);
 
   useEffect(() => {
     const savedTasks = localStorage.getItem(STORAGE_KEY);
+    const savedStudyPlan = localStorage.getItem(STUDY_PLAN_STORAGE_KEY);
 
     if (savedTasks) {
       try {
         setTasks(JSON.parse(savedTasks));
       } catch {
         setTasks([]);
+      }
+    }
+
+    if (savedStudyPlan) {
+      try {
+        setStudyBlocks(JSON.parse(savedStudyPlan));
+      } catch {
+        setStudyBlocks([]);
       }
     }
   }, []);
@@ -83,6 +107,14 @@ export default function HomePage() {
       recent: tasks.slice(0, 5),
     };
   }, [tasks]);
+
+  const cooked = useMemo(() => {
+    return calculateCookedScore(tasks, studyBlocks);
+  }, [tasks, studyBlocks]);
+
+  const bestRecoveryAction = useMemo(() => {
+    return getBestRecoveryAction(tasks, studyBlocks);
+  }, [tasks, studyBlocks]);
 
   const coachTitle =
     stats.overdue > 0
@@ -211,6 +243,94 @@ export default function HomePage() {
             <div className="rounded-3xl border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.2)] sm:p-6">
               <p className="text-sm text-slate-400">Completion rate</p>
               <p className="mt-3 text-3xl font-semibold sm:text-4xl">{stats.completionRate}%</p>
+            </div>
+          </section>
+
+          <section className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
+            <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-start">
+              <div>
+                <div className="inline-flex rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10">
+                  How Cooked Am I?
+                </div>
+
+                <h2 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
+                  Academic Risk Score
+                </h2>
+
+                <div className="mt-5 flex items-end gap-3">
+                  <span className={`text-5xl font-semibold sm:text-6xl ${getCookedTextColor(cooked.score)}`}>
+                    {cooked.score}
+                  </span>
+                  <span className="pb-2 text-xl text-slate-500">/100</span>
+                </div>
+
+                <p className="mt-3 text-lg font-medium text-white">
+                  Status: {cooked.status}
+                </p>
+
+                <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base sm:leading-8">
+                  {cooked.headline}
+                </p>
+
+                <div className="mt-6 h-3 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-blue-400 transition-all duration-500"
+                    style={{ width: `${Math.max(6, cooked.score)}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-white/10 bg-[#101b38] p-5 sm:p-6">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                  What’s driving it
+                </p>
+
+                <ul className="mt-5 space-y-3">
+                  {cooked.reasons.map((reason) => (
+                    <li key={reason} className="flex items-start gap-3 text-sm text-slate-200">
+                      <span className="mt-2 h-2 w-2 rounded-full bg-blue-400" />
+                      <span>{reason}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                    Fastest recovery move
+                  </p>
+
+                  {bestRecoveryAction ? (
+                    <>
+                      <p className="mt-3 text-sm leading-7 text-white">
+                        {bestRecoveryAction.label}
+                      </p>
+                      <p className="mt-2 text-sm text-blue-300">
+                        Potential score drop: -{bestRecoveryAction.scoreDrop}
+                      </p>
+
+                      <Link
+                        href={bestRecoveryAction.route}
+                        className="mt-4 inline-flex w-full justify-center rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
+                      >
+                        Reduce My Score
+                      </Link>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-3 text-sm leading-7 text-slate-300">
+                        You have no active recovery moves right now.
+                      </p>
+
+                      <Link
+                        href="/tasks"
+                        className="mt-4 inline-flex w-full justify-center rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
+                      >
+                        Add a Task
+                      </Link>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </section>
 

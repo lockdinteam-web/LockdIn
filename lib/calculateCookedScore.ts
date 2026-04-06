@@ -1,0 +1,235 @@
+export type Priority = "High" | "Medium" | "Low";
+
+export type Task = {
+  id: string;
+  title: string;
+  module: string;
+  dueDate: string;
+  priority: Priority;
+  completed: boolean;
+};
+
+export type StudyBlock = {
+  id: string;
+  day: string;
+  time: string;
+  subject: string;
+  focus: string;
+  taskId: string;
+  durationMinutes: number;
+  completed: boolean;
+};
+
+export type CookedResult = {
+  score: number;
+  status: string;
+  headline: string;
+  reasons: string[];
+};
+
+export type RecoveryAction = {
+  type: "task" | "studyBlock";
+  id: string;
+  label: string;
+  scoreDrop: number;
+  route: string;
+};
+
+function startOfToday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function daysUntil(dateString: string) {
+  const today = startOfToday();
+  const due = new Date(dateString);
+  due.setHours(0, 0, 0, 0);
+
+  const diffMs = due.getTime() - today.getTime();
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+}
+
+function priorityWeight(priority: Priority) {
+  if (priority === "High") return 3;
+  if (priority === "Medium") return 2;
+  return 1;
+}
+
+function getCookedStatus(score: number) {
+  if (score <= 20) return "Chill";
+  if (score <= 40) return "Stable";
+  if (score <= 60) return "Wobbling";
+  if (score <= 80) return "Cooked";
+  return "Deep Fried";
+}
+
+function getCookedHeadline(score: number) {
+  if (score <= 20) return "You’re in a good spot. Keep the momentum going.";
+  if (score <= 40) return "Things are under control, but don’t get lazy.";
+  if (score <= 60) return "Pressure is building. A solid session today would help.";
+  if (score <= 80) return "You are officially cooked unless you act now.";
+  return "This is salvageable, but only if you lock in immediately.";
+}
+
+export function calculateCookedScore(
+  tasks: Task[],
+  studyBlocks: StudyBlock[]
+): CookedResult {
+  const incompleteTasks = tasks.filter((task) => !task.completed);
+
+  let overdueScore = 0;
+  let upcomingScore = 0;
+  let priorityScore = 0;
+  let workloadScore = 0;
+  let missedStudyScore = 0;
+
+  const reasons: string[] = [];
+
+  const overdueTasks = incompleteTasks.filter((task) => daysUntil(task.dueDate) < 0);
+
+  const dueSoonTasks = incompleteTasks.filter((task) => {
+    const days = daysUntil(task.dueDate);
+    return days >= 0 && days <= 7;
+  });
+
+  const highPriorityOpen = incompleteTasks.filter(
+    (task) => task.priority === "High"
+  ).length;
+
+  const mediumPriorityOpen = incompleteTasks.filter(
+    (task) => task.priority === "Medium"
+  ).length;
+
+  const missedBlocks = studyBlocks.filter((block) => !block.completed);
+
+  // Overdue tasks
+  overdueScore = Math.min(
+    30,
+    overdueTasks.reduce((sum, task) => sum + 6 * priorityWeight(task.priority), 0)
+  );
+
+  if (overdueTasks.length > 0) {
+    reasons.push(
+      `${overdueTasks.length} overdue task${overdueTasks.length === 1 ? "" : "s"}`
+    );
+  }
+
+  // Upcoming deadlines
+  upcomingScore = Math.min(
+    25,
+    dueSoonTasks.reduce((sum, task) => {
+      const days = daysUntil(task.dueDate);
+
+      if (days <= 1) return sum + 6 * priorityWeight(task.priority);
+      if (days <= 3) return sum + 4 * priorityWeight(task.priority);
+      return sum + 2 * priorityWeight(task.priority);
+    }, 0)
+  );
+
+  if (dueSoonTasks.length > 0) {
+    reasons.push(
+      `${dueSoonTasks.length} deadline${dueSoonTasks.length === 1 ? "" : "s"} in the next 7 days`
+    );
+  }
+
+  // Priority pressure
+  priorityScore = Math.min(15, highPriorityOpen * 4 + mediumPriorityOpen * 2);
+
+  if (highPriorityOpen > 0) {
+    reasons.push(
+      `${highPriorityOpen} high-priority task${highPriorityOpen === 1 ? "" : "s"} still open`
+    );
+  }
+
+  // Workload volume
+  workloadScore = Math.min(15, incompleteTasks.length * 2);
+
+  if (incompleteTasks.length >= 5) {
+    reasons.push(`${incompleteTasks.length} unfinished tasks total`);
+  }
+
+  // Missed study blocks
+  missedStudyScore = Math.min(15, missedBlocks.length * 3);
+
+  if (missedBlocks.length > 0) {
+    reasons.push(
+      `${missedBlocks.length} study block${missedBlocks.length === 1 ? "" : "s"} not completed`
+    );
+  }
+
+  const rawScore =
+    overdueScore +
+    upcomingScore +
+    priorityScore +
+    workloadScore +
+    missedStudyScore;
+
+  const score = Math.max(0, Math.min(100, rawScore));
+  const status = getCookedStatus(score);
+  const headline = getCookedHeadline(score);
+
+  return {
+    score,
+    status,
+    headline,
+    reasons:
+      reasons.length > 0 ? reasons.slice(0, 4) : ["No major risk factors right now"],
+  };
+}
+
+export function getBestRecoveryAction(
+  tasks: Task[],
+  studyBlocks: StudyBlock[]
+): RecoveryAction | null {
+  const currentScore = calculateCookedScore(tasks, studyBlocks).score;
+  const actions: RecoveryAction[] = [];
+
+  for (const task of tasks) {
+    if (task.completed) continue;
+
+    const simulatedTasks = tasks.map((currentTask) =>
+      currentTask.id === task.id ? { ...currentTask, completed: true } : currentTask
+    );
+
+    const newScore = calculateCookedScore(simulatedTasks, studyBlocks).score;
+    const scoreDrop = Math.max(0, currentScore - newScore);
+
+    actions.push({
+      type: "task",
+      id: task.id,
+      label: `Finish "${task.title}"`,
+      scoreDrop,
+      route: "/tasks",
+    });
+  }
+
+  for (const block of studyBlocks) {
+    if (block.completed) continue;
+
+    const simulatedBlocks = studyBlocks.map((currentBlock) =>
+      currentBlock.id === block.id ? { ...currentBlock, completed: true } : currentBlock
+    );
+
+    const newScore = calculateCookedScore(tasks, simulatedBlocks).score;
+    const scoreDrop = Math.max(0, currentScore - newScore);
+
+    actions.push({
+      type: "studyBlock",
+      id: block.id,
+      label: `Complete ${block.subject} study block`,
+      scoreDrop,
+      route: "/planner",
+    });
+  }
+
+  if (actions.length === 0) return null;
+
+  actions.sort((a, b) => {
+    if (b.scoreDrop !== a.scoreDrop) return b.scoreDrop - a.scoreDrop;
+    if (a.type !== b.type) return a.type === "task" ? -1 : 1;
+    return a.label.localeCompare(b.label);
+  });
+
+  return actions[0];
+}
