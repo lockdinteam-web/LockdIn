@@ -3,16 +3,23 @@
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 
+type DegreeYear = {
+  id: string;
+  name: string;
+  weight: number | "";
+};
+
 type DegreeModule = {
   id: string;
   name: string;
+  yearId: string;
   credits: number | "";
   score: number | "";
   completed: boolean;
 };
 
-const STORAGE_KEY = "lockdin_degree_tracker_modules";
-const DEFAULT_TOTAL_CREDITS = 120;
+const YEARS_STORAGE_KEY = "lockdin_degree_tracker_years";
+const MODULES_STORAGE_KEY = "lockdin_degree_tracker_modules_v2";
 
 function getClassification(average: number) {
   if (average >= 70) return "First";
@@ -23,34 +30,59 @@ function getClassification(average: number) {
 }
 
 function formatNumber(value: number) {
-  return Number.isFinite(value) ? value.toFixed(1) : "0.0";
+  if (!Number.isFinite(value)) return "0.0";
+  return value.toFixed(1);
 }
 
-function getNeededAverage(
-  targetAverage: number,
-  totalCredits: number,
-  completedWeightedScore: number,
-  remainingCredits: number
-) {
-  if (remainingCredits <= 0) return null;
-  return (
-    (targetAverage * totalCredits - completedWeightedScore) / remainingCredits
-  );
+function createDefaultYears(): DegreeYear[] {
+  return [
+    {
+      id: crypto.randomUUID(),
+      name: "Year 2",
+      weight: 30,
+    },
+    {
+      id: crypto.randomUUID(),
+      name: "Year 3",
+      weight: 70,
+    },
+  ];
 }
 
 export default function DegreeTrackerPage() {
+  const [years, setYears] = useState<DegreeYear[]>([]);
   const [modules, setModules] = useState<DegreeModule[]>([]);
-  const [totalCredits, setTotalCredits] = useState<number>(DEFAULT_TOTAL_CREDITS);
 
   useEffect(() => {
-    const savedModules = localStorage.getItem(STORAGE_KEY);
-    if (savedModules) {
-      setModules(JSON.parse(savedModules));
+    const savedYears = localStorage.getItem(YEARS_STORAGE_KEY);
+    const savedModules = localStorage.getItem(MODULES_STORAGE_KEY);
+
+    if (savedYears) {
+      const parsedYears: DegreeYear[] = JSON.parse(savedYears);
+      setYears(parsedYears);
+
+      if (savedModules) {
+        setModules(JSON.parse(savedModules));
+      } else {
+        setModules([
+          {
+            id: crypto.randomUUID(),
+            name: "",
+            yearId: parsedYears[0]?.id ?? "",
+            credits: "",
+            score: "",
+            completed: false,
+          },
+        ]);
+      }
     } else {
+      const defaultYears = createDefaultYears();
+      setYears(defaultYears);
       setModules([
         {
           id: crypto.randomUUID(),
           name: "",
+          yearId: defaultYears[0].id,
           credits: "",
           score: "",
           completed: false,
@@ -60,8 +92,51 @@ export default function DegreeTrackerPage() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(modules));
+    if (years.length > 0) {
+      localStorage.setItem(YEARS_STORAGE_KEY, JSON.stringify(years));
+    }
+  }, [years]);
+
+  useEffect(() => {
+    localStorage.setItem(MODULES_STORAGE_KEY, JSON.stringify(modules));
   }, [modules]);
+
+  const addYear = () => {
+    const newYear: DegreeYear = {
+      id: crypto.randomUUID(),
+      name: `Year ${years.length + 1}`,
+      weight: "",
+    };
+
+    setYears((prev) => [...prev, newYear]);
+  };
+
+  const removeYear = (yearId: string) => {
+    if (years.length === 1) return;
+
+    const remainingYears = years.filter((year) => year.id !== yearId);
+    const fallbackYearId = remainingYears[0]?.id ?? "";
+
+    setYears(remainingYears);
+    setModules((prev) =>
+      prev
+        .filter((module) => module.yearId !== yearId)
+        .map((module) => ({
+          ...module,
+          yearId: module.yearId || fallbackYearId,
+        }))
+    );
+  };
+
+  const updateYear = <K extends keyof DegreeYear>(
+    id: string,
+    field: K,
+    value: DegreeYear[K]
+  ) => {
+    setYears((prev) =>
+      prev.map((year) => (year.id === id ? { ...year, [field]: value } : year))
+    );
+  };
 
   const addModule = () => {
     setModules((prev) => [
@@ -69,6 +144,7 @@ export default function DegreeTrackerPage() {
       {
         id: crypto.randomUUID(),
         name: "",
+        yearId: years[0]?.id ?? "",
         credits: "",
         score: "",
         completed: false,
@@ -93,113 +169,151 @@ export default function DegreeTrackerPage() {
   };
 
   const calculations = useMemo(() => {
-    const completedModules = modules.filter(
-      (module) =>
-        module.completed &&
-        typeof module.credits === "number" &&
-        typeof module.score === "number"
-    );
+    const totalYearWeight = years.reduce((sum, year) => {
+      return sum + (typeof year.weight === "number" ? year.weight : 0);
+    }, 0);
 
-    const enteredModules = modules.filter(
-      (module) => typeof module.credits === "number" && module.credits > 0
-    );
+    const yearBreakdown = years.map((year) => {
+      const yearModules = modules.filter((module) => module.yearId === year.id);
 
-    const completedCredits = completedModules.reduce(
-      (sum, module) => sum + Number(module.credits),
+      const completedModules = yearModules.filter(
+        (module) =>
+          module.completed &&
+          typeof module.credits === "number" &&
+          module.credits > 0 &&
+          typeof module.score === "number"
+      );
+
+      const totalCreditsEntered = yearModules.reduce((sum, module) => {
+        return sum + (typeof module.credits === "number" ? module.credits : 0);
+      }, 0);
+
+      const completedCredits = completedModules.reduce(
+        (sum, module) => sum + Number(module.credits),
+        0
+      );
+
+      const completedWeightedMarks = completedModules.reduce(
+        (sum, module) => sum + Number(module.credits) * Number(module.score),
+        0
+      );
+
+      const yearAverage =
+        completedCredits > 0 ? completedWeightedMarks / completedCredits : 0;
+
+      const yearWeight = typeof year.weight === "number" ? year.weight : 0;
+      const contributionSoFar = (yearAverage * yearWeight) / 100;
+      const remainingCredits = Math.max(totalCreditsEntered - completedCredits, 0);
+
+      return {
+        id: year.id,
+        name: year.name,
+        weight: yearWeight,
+        totalCreditsEntered,
+        completedCredits,
+        remainingCredits,
+        completedWeightedMarks,
+        yearAverage,
+        contributionSoFar,
+      };
+    });
+
+    const weightedAverageSoFar = yearBreakdown.reduce(
+      (sum, year) => sum + year.contributionSoFar,
       0
     );
 
-    const completedWeightedScore = completedModules.reduce(
-      (sum, module) => sum + Number(module.credits) * Number(module.score),
-      0
-    );
+    const maxPossibleAverage = yearBreakdown.reduce((sum, year) => {
+      if (year.totalCreditsEntered === 0) return sum;
 
-    const plannedCredits = enteredModules.reduce(
-      (sum, module) => sum + Number(module.credits),
-      0
-    );
+      const bestPossibleYearAverage =
+        (year.completedWeightedMarks + year.remainingCredits * 100) /
+        year.totalCreditsEntered;
 
-    const remainingCredits = Math.max(totalCredits - completedCredits, 0);
+      return sum + (bestPossibleYearAverage * year.weight) / 100;
+    }, 0);
 
-    const currentAverage =
-      completedCredits > 0 ? completedWeightedScore / completedCredits : 0;
+    const targetNeededByYear = (target: number) => {
+      return yearBreakdown.map((year) => {
+        if (year.totalCreditsEntered === 0) {
+          return {
+            yearId: year.id,
+            yearName: year.name,
+            neededAverage: null as number | null,
+          };
+        }
 
-    const firstNeeded = getNeededAverage(
-      70,
-      totalCredits,
-      completedWeightedScore,
-      remainingCredits
-    );
-    const twoOneNeeded = getNeededAverage(
-      60,
-      totalCredits,
-      completedWeightedScore,
-      remainingCredits
-    );
-    const twoTwoNeeded = getNeededAverage(
-      50,
-      totalCredits,
-      completedWeightedScore,
-      remainingCredits
-    );
-    const thirdNeeded = getNeededAverage(
-      40,
-      totalCredits,
-      completedWeightedScore,
-      remainingCredits
-    );
+        if (year.remainingCredits <= 0) {
+          return {
+            yearId: year.id,
+            yearName: year.name,
+            neededAverage: null as number | null,
+          };
+        }
 
-    let bestPossible = "Fail";
+        const otherYearsContribution = yearBreakdown
+          .filter((y) => y.id !== year.id)
+          .reduce((sum, y) => sum + y.contributionSoFar, 0);
 
-    if (remainingCredits === 0) {
-      bestPossible = getClassification(currentAverage);
-    } else {
-      const maxPossibleAverage =
-        (completedWeightedScore + remainingCredits * 100) / totalCredits;
-      bestPossible = getClassification(maxPossibleAverage);
-    }
+        const neededWeightedContribution = target - otherYearsContribution;
+        const neededYearAverage =
+          year.weight > 0 ? (neededWeightedContribution * 100) / year.weight : null;
+
+        return {
+          yearId: year.id,
+          yearName: year.name,
+          neededAverage: neededYearAverage,
+        };
+      });
+    };
 
     return {
-      completedCredits,
-      completedWeightedScore,
-      plannedCredits,
-      remainingCredits,
-      currentAverage,
-      currentClassification: getClassification(currentAverage),
-      bestPossible,
-      firstNeeded,
-      twoOneNeeded,
-      twoTwoNeeded,
-      thirdNeeded,
+      totalYearWeight,
+      yearBreakdown,
+      weightedAverageSoFar,
+      currentClassification: getClassification(weightedAverageSoFar),
+      maxPossibleAverage,
+      bestPossibleClassification: getClassification(maxPossibleAverage),
+      firstRequirements: targetNeededByYear(70),
+      twoOneRequirements: targetNeededByYear(60),
+      twoTwoRequirements: targetNeededByYear(50),
+      thirdRequirements: targetNeededByYear(40),
     };
-  }, [modules, totalCredits]);
+  }, [years, modules]);
 
-  const getTargetMessage = (needed: number | null, label: string) => {
-    if (needed === null) {
-      return `No remaining credits left for ${label}.`;
+  const getNeededMessage = (neededAverage: number | null, label: string) => {
+    if (neededAverage === null) {
+      return `Not enough information yet for ${label}.`;
     }
 
-    if (needed <= 0) {
-      return `You have already secured ${label}.`;
+    if (neededAverage <= 0) {
+      return `${label} is already secured based on the other entered years.`;
     }
 
-    if (needed > 100) {
-      return `${label} is no longer mathematically possible.`;
+    if (neededAverage > 100) {
+      return `${label} is no longer mathematically possible through this year alone.`;
     }
 
-    if (needed > 85) {
-      return `${label} is still possible, but it will require an exceptional finish.`;
+    if (neededAverage > 85) {
+      return `${label} is still possible, but it would require an exceptional year average.`;
     }
 
-    if (needed > 70) {
-      return `${label} is possible, but you need a very strong finish.`;
+    if (neededAverage > 70) {
+      return `${label} is possible, but you need a very strong average in this year.`;
     }
 
-    if (needed > 60) {
-      return `${label} is within reach if you perform strongly in the remaining modules.`;
+    if (neededAverage > 60) {
+      return `${label} is within reach if you perform strongly.`;
     }
 
-    return `${label} looks achievable based on your current position.`;
+    return `${label} looks achievable from this year.`;
+  };
+
+  const getRequirementForYear = (
+    requirementList: { yearId: string; yearName: string; neededAverage: number | null }[],
+    yearId: string
+  ) => {
+    return requirementList.find((item) => item.yearId === yearId)?.neededAverage ?? null;
   };
 
   return (
@@ -211,9 +325,9 @@ export default function DegreeTrackerPage() {
               Degree Tracker
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-400 md:text-base">
-              Enter your completed module scores to see your current weighted
-              average, estimated classification, and what you need in your
-              remaining credits to reach each degree boundary.
+              Add your years, set each year’s weighting, then enter module scores
+              to see your weighted degree average and what you need for a First,
+              2:1, 2:2, or Third.
             </p>
           </div>
 
@@ -221,7 +335,7 @@ export default function DegreeTrackerPage() {
             <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
               <p className="text-sm text-slate-400">Current weighted average</p>
               <p className="mt-2 text-3xl font-bold">
-                {formatNumber(calculations.currentAverage)}%
+                {formatNumber(calculations.weightedAverageSoFar)}%
               </p>
             </div>
 
@@ -233,226 +347,370 @@ export default function DegreeTrackerPage() {
             </div>
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-              <p className="text-sm text-slate-400">Completed credits</p>
+              <p className="text-sm text-slate-400">Best possible average</p>
               <p className="mt-2 text-3xl font-bold">
-                {calculations.completedCredits}
+                {formatNumber(calculations.maxPossibleAverage)}%
               </p>
             </div>
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-              <p className="text-sm text-slate-400">Remaining credits</p>
+              <p className="text-sm text-slate-400">Best possible outcome</p>
               <p className="mt-2 text-3xl font-bold">
-                {calculations.remainingCredits}
+                {calculations.bestPossibleClassification}
               </p>
             </div>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-              <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold">Your modules</h2>
-                  <p className="mt-1 text-sm text-slate-400">
-                    Tick a module once you have the final mark.
-                  </p>
+          <div className="grid gap-6 xl:grid-cols-[1.2fr_1.3fr]">
+            <div className="space-y-6">
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold">Year weightings</h2>
+                    <p className="mt-1 text-sm text-slate-400">
+                      Example: Year 2 = 30%, Year 3 = 70%.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={addYear}
+                    className="rounded-xl border border-blue-400/20 bg-blue-500/10 px-4 py-2 text-sm font-medium text-blue-300 transition hover:bg-blue-500/15"
+                  >
+                    + Add year
+                  </button>
                 </div>
 
-                <button
-                  onClick={addModule}
-                  className="rounded-xl border border-blue-400/20 bg-blue-500/10 px-4 py-2 text-sm font-medium text-blue-300 transition hover:bg-blue-500/15"
-                >
-                  + Add module
-                </button>
-              </div>
+                <div className="space-y-4">
+                  {years.map((year, index) => (
+                    <div
+                      key={year.id}
+                      className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4"
+                    >
+                      <div className="mb-4 flex items-center justify-between">
+                        <p className="text-sm font-medium text-slate-300">
+                          Year setup {index + 1}
+                        </p>
 
-              <div className="mb-4 rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
-                <label className="mb-2 block text-sm text-slate-400">
-                  Total course credits
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={totalCredits}
-                  onChange={(e) => setTotalCredits(Number(e.target.value) || 0)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-blue-400/40"
-                />
-              </div>
-
-              <div className="space-y-4">
-                {modules.map((module, index) => (
-                  <div
-                    key={module.id}
-                    className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4"
-                  >
-                    <div className="mb-4 flex items-center justify-between">
-                      <p className="text-sm font-medium text-slate-300">
-                        Module {index + 1}
-                      </p>
-
-                      {modules.length > 1 && (
-                        <button
-                          onClick={() => removeModule(module.id)}
-                          className="text-sm text-red-400 transition hover:text-red-300"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="grid gap-4 md:grid-cols-4">
-                      <div className="md:col-span-2">
-                        <label className="mb-2 block text-sm text-slate-400">
-                          Module name
-                        </label>
-                        <input
-                          type="text"
-                          value={module.name}
-                          onChange={(e) =>
-                            updateModule(module.id, "name", e.target.value)
-                          }
-                          placeholder="e.g. Data Structures"
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-blue-400/40"
-                        />
+                        {years.length > 1 && (
+                          <button
+                            onClick={() => removeYear(year.id)}
+                            className="text-sm text-red-400 transition hover:text-red-300"
+                          >
+                            Remove
+                          </button>
+                        )}
                       </div>
 
-                      <div>
-                        <label className="mb-2 block text-sm text-slate-400">
-                          Credits
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={module.credits}
-                          onChange={(e) =>
-                            updateModule(
-                              module.id,
-                              "credits",
-                              e.target.value === "" ? "" : Number(e.target.value)
-                            )
-                          }
-                          placeholder="20"
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-blue-400/40"
-                        />
-                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div>
+                          <label className="mb-2 block text-sm text-slate-400">
+                            Year name
+                          </label>
+                          <input
+                            type="text"
+                            value={year.name}
+                            onChange={(e) =>
+                              updateYear(year.id, "name", e.target.value)
+                            }
+                            placeholder="e.g. Year 2"
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-blue-400/40"
+                          />
+                        </div>
 
-                      <div>
-                        <label className="mb-2 block text-sm text-slate-400">
-                          Score %
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={module.score}
-                          onChange={(e) =>
-                            updateModule(
-                              module.id,
-                              "score",
-                              e.target.value === "" ? "" : Number(e.target.value)
-                            )
-                          }
-                          placeholder="67"
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-blue-400/40"
-                        />
+                        <div>
+                          <label className="mb-2 block text-sm text-slate-400">
+                            Degree weighting %
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={year.weight}
+                            onChange={(e) =>
+                              updateYear(
+                                year.id,
+                                "weight",
+                                e.target.value === "" ? "" : Number(e.target.value)
+                              )
+                            }
+                            placeholder="e.g. 70"
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-blue-400/40"
+                          />
+                        </div>
                       </div>
                     </div>
+                  ))}
+                </div>
 
-                    <label className="mt-4 flex items-center gap-3 text-sm text-slate-300">
-                      <input
-                        type="checkbox"
-                        checked={module.completed}
-                        onChange={(e) =>
-                          updateModule(module.id, "completed", e.target.checked)
-                        }
-                        className="h-4 w-4 rounded border-slate-700 bg-slate-950"
-                      />
-                      Final score received for this module
-                    </label>
+                <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
+                  <p className="text-sm text-slate-400">Total weighting entered</p>
+                  <p className="mt-1 text-2xl font-bold text-white">
+                    {formatNumber(calculations.totalYearWeight)}%
+                  </p>
+                  <p className="mt-2 text-sm text-slate-400">
+                    For the cleanest calculation, this should add up to 100%.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold">Modules</h2>
+                    <p className="mt-1 text-sm text-slate-400">
+                      Assign each module to a year and tick it once the final mark is in.
+                    </p>
                   </div>
-                ))}
+
+                  <button
+                    onClick={addModule}
+                    className="rounded-xl border border-blue-400/20 bg-blue-500/10 px-4 py-2 text-sm font-medium text-blue-300 transition hover:bg-blue-500/15"
+                  >
+                    + Add module
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {modules.map((module, index) => (
+                    <div
+                      key={module.id}
+                      className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4"
+                    >
+                      <div className="mb-4 flex items-center justify-between">
+                        <p className="text-sm font-medium text-slate-300">
+                          Module {index + 1}
+                        </p>
+
+                        {modules.length > 1 && (
+                          <button
+                            onClick={() => removeModule(module.id)}
+                            className="text-sm text-red-400 transition hover:text-red-300"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="md:col-span-2">
+                          <label className="mb-2 block text-sm text-slate-400">
+                            Module name
+                          </label>
+                          <input
+                            type="text"
+                            value={module.name}
+                            onChange={(e) =>
+                              updateModule(module.id, "name", e.target.value)
+                            }
+                            placeholder="e.g. Software Engineering"
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-blue-400/40"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-2 block text-sm text-slate-400">
+                            Year
+                          </label>
+                          <select
+                            value={module.yearId}
+                            onChange={(e) =>
+                              updateModule(module.id, "yearId", e.target.value)
+                            }
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-blue-400/40"
+                          >
+                            {years.map((year) => (
+                              <option key={year.id} value={year.id}>
+                                {year.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="mb-2 block text-sm text-slate-400">
+                            Credits
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={module.credits}
+                            onChange={(e) =>
+                              updateModule(
+                                module.id,
+                                "credits",
+                                e.target.value === "" ? "" : Number(e.target.value)
+                              )
+                            }
+                            placeholder="20"
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-blue-400/40"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-2 block text-sm text-slate-400">
+                            Score %
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={module.score}
+                            onChange={(e) =>
+                              updateModule(
+                                module.id,
+                                "score",
+                                e.target.value === "" ? "" : Number(e.target.value)
+                              )
+                            }
+                            placeholder="67"
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-blue-400/40"
+                          />
+                        </div>
+                      </div>
+
+                      <label className="mt-4 flex items-center gap-3 text-sm text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={module.completed}
+                          onChange={(e) =>
+                            updateModule(module.id, "completed", e.target.checked)
+                          }
+                          className="h-4 w-4 rounded border-slate-700 bg-slate-950"
+                        />
+                        Final score received for this module
+                      </label>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
             <div className="space-y-6">
               <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-                <h2 className="text-xl font-semibold">Position summary</h2>
+                <h2 className="text-xl font-semibold">Year breakdown</h2>
 
                 <div className="mt-4 space-y-4">
-                  <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-                    <p className="text-sm text-slate-400">Planned credits entered</p>
-                    <p className="mt-1 text-2xl font-bold text-white">
-                      {calculations.plannedCredits}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-                    <p className="text-sm text-slate-400">Best possible outcome</p>
-                    <p className="mt-1 text-2xl font-bold text-white">
-                      {calculations.bestPossible}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-                    <p className="text-sm text-slate-400">What this means</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-300">
-                      You are currently on a{" "}
-                      <span className="font-semibold text-white">
-                        {formatNumber(calculations.currentAverage)}%
-                      </span>{" "}
-                      average, which puts you at a{" "}
-                      <span className="font-semibold text-white">
-                        {calculations.currentClassification}
-                      </span>
-                      . With your remaining{" "}
-                      <span className="font-semibold text-white">
-                        {calculations.remainingCredits}
-                      </span>{" "}
-                      credits, your best possible final outcome is a{" "}
-                      <span className="font-semibold text-white">
-                        {calculations.bestPossible}
-                      </span>
-                      .
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-                <h2 className="text-xl font-semibold">What you need to average</h2>
-
-                <div className="mt-4 space-y-4">
-                  {[
-                    { label: "First", target: calculations.firstNeeded },
-                    { label: "2:1", target: calculations.twoOneNeeded },
-                    { label: "2:2", target: calculations.twoTwoNeeded },
-                    { label: "Third", target: calculations.thirdNeeded },
-                  ].map((item) => (
+                  {calculations.yearBreakdown.map((year) => (
                     <div
-                      key={item.label}
+                      key={year.id}
                       className="rounded-xl border border-slate-800 bg-slate-950/80 p-4"
                     >
                       <div className="flex items-center justify-between gap-4">
                         <p className="text-lg font-semibold text-white">
-                          {item.label}
+                          {year.name}
                         </p>
-                        <p className="text-lg font-bold text-blue-300">
-                          {item.target === null ? "—" : `${formatNumber(item.target)}%`}
+                        <p className="text-sm text-blue-300">
+                          {formatNumber(year.weight)}% weighting
                         </p>
                       </div>
-                      <p className="mt-2 text-sm leading-6 text-slate-400">
-                        {getTargetMessage(item.target, item.label)}
-                      </p>
+
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div>
+                          <p className="text-sm text-slate-400">Year average</p>
+                          <p className="mt-1 text-2xl font-bold text-white">
+                            {formatNumber(year.yearAverage)}%
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-sm text-slate-400">
+                            Contribution to degree so far
+                          </p>
+                          <p className="mt-1 text-2xl font-bold text-white">
+                            {formatNumber(year.contributionSoFar)}%
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-sm text-slate-400">Credits entered</p>
+                          <p className="mt-1 text-lg font-semibold text-white">
+                            {year.totalCreditsEntered}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-sm text-slate-400">Remaining credits</p>
+                          <p className="mt-1 text-lg font-semibold text-white">
+                            {year.remainingCredits}
+                          </p>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
 
               <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+                <h2 className="text-xl font-semibold">What you need by year</h2>
+
+                <div className="mt-4 space-y-4">
+                  {calculations.yearBreakdown.map((year) => {
+                    const firstNeeded = getRequirementForYear(
+                      calculations.firstRequirements,
+                      year.id
+                    );
+                    const twoOneNeeded = getRequirementForYear(
+                      calculations.twoOneRequirements,
+                      year.id
+                    );
+                    const twoTwoNeeded = getRequirementForYear(
+                      calculations.twoTwoRequirements,
+                      year.id
+                    );
+                    const thirdNeeded = getRequirementForYear(
+                      calculations.thirdRequirements,
+                      year.id
+                    );
+
+                    return (
+                      <div
+                        key={year.id}
+                        className="rounded-xl border border-slate-800 bg-slate-950/80 p-4"
+                      >
+                        <p className="text-lg font-semibold text-white">
+                          {year.name}
+                        </p>
+
+                        <div className="mt-4 space-y-3">
+                          {[
+                            { label: "First", value: firstNeeded },
+                            { label: "2:1", value: twoOneNeeded },
+                            { label: "2:2", value: twoTwoNeeded },
+                            { label: "Third", value: thirdNeeded },
+                          ].map((item) => (
+                            <div
+                              key={item.label}
+                              className="rounded-xl border border-slate-800 bg-slate-900/60 p-3"
+                            >
+                              <div className="flex items-center justify-between gap-4">
+                                <p className="font-medium text-white">
+                                  {item.label}
+                                </p>
+                                <p className="font-bold text-blue-300">
+                                  {item.value === null
+                                    ? "—"
+                                    : `${formatNumber(item.value)}%`}
+                                </p>
+                              </div>
+                              <p className="mt-2 text-sm leading-6 text-slate-400">
+                                {getNeededMessage(item.value, item.label)}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
                 <h2 className="text-xl font-semibold">Important note</h2>
                 <p className="mt-3 text-sm leading-6 text-slate-400">
-                  This tracker uses standard UK classification boundaries:
-                  First = 70+, 2:1 = 60+, 2:2 = 50+, Third = 40+. Some universities
-                  weight years differently, so this should be treated as an estimate.
+                  This version calculates your degree using custom year weightings.
+                  Inside each year, module averages are credit-weighted. Then each
+                  year average is multiplied by its degree weighting. For best
+                  results, make sure your year weightings add up to 100%.
                 </p>
               </div>
             </div>

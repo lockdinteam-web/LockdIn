@@ -326,6 +326,12 @@ export default function HomePage() {
                   >
                     View performance
                   </Link>
+                  <Link
+                    href="/degree-tracker"
+                    className="w-full rounded-2xl border border-blue-400/20 bg-blue-500/10 px-6 py-3 text-center text-sm font-medium text-blue-200 transition hover:border-blue-400 hover:bg-blue-500/20 sm:w-auto"
+                  >
+                    Open degree tracker
+                  </Link>
                 </div>
               </div>
 
@@ -633,7 +639,7 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
+              <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-4 md:gap-4">
                 <Link
                   href="/tasks"
                   className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
@@ -651,6 +657,12 @@ export default function HomePage() {
                   className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
                 >
                   Review performance
+                </Link>
+                <Link
+                  href="/degree-tracker"
+                  className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-4 text-sm text-blue-200 transition hover:border-blue-400 hover:bg-blue-500/20"
+                >
+                  Open degree tracker
                 </Link>
               </div>
             </div>
@@ -767,6 +779,26 @@ export default function HomePage() {
                   <p className="mt-2 text-sm leading-6 text-slate-400">
                     Track pressure, momentum, and what to fix next.
                   </p>
+                </Link>
+
+                <Link
+                  href="/degree-tracker"
+                  className="group relative overflow-hidden rounded-2xl border border-blue-400/20 bg-[linear-gradient(135deg,rgba(59,130,246,0.18),rgba(15,23,42,0.95))] p-4 transition hover:border-blue-400 hover:bg-[linear-gradient(135deg,rgba(59,130,246,0.24),rgba(15,23,42,1))] sm:p-5"
+                >
+                  <div className="absolute right-0 top-0 h-24 w-24 rounded-full bg-blue-400/10 blur-2xl transition group-hover:bg-blue-400/20" />
+                  <div className="relative">
+                    <div className="inline-flex rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
+                      New
+                    </div>
+                    <p className="mt-3 text-lg font-medium text-white">Degree Tracker</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">
+                      Track overall progress, see how far through your degree you are, and
+                      stay motivated with the bigger picture.
+                    </p>
+                    <p className="mt-4 text-sm font-medium text-blue-300 transition group-hover:text-blue-200">
+                      Open degree tracker →
+                    </p>
+                  </div>
                 </Link>
               </div>
             </div>
