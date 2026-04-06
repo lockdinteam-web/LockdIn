@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { useTasks } from "@/components/TasksProvider";
+import { useStudyPlan } from "@/components/StudyPlanProvider";
+import { supabase } from "@/lib/supabase";
 
 type Priority = "High" | "Medium" | "Low";
 
@@ -20,8 +23,8 @@ type StudyBlock = {
   time: string;
   subject: string;
   focus: string;
-  taskId: string;
-  durationMinutes: number;
+  task_id: string | null;
+  duration_minutes: number;
   completed: boolean;
   location: string;
 };
@@ -31,10 +34,6 @@ type PlannerPreferences = {
   availableTimeSlots: string[];
   preferredLocation: string;
 };
-
-const TASKS_STORAGE_KEY = "lockdin_tasks";
-const STUDY_PLAN_STORAGE_KEY = "lockdin_study_plan";
-const PLANNER_PREFERENCES_KEY = "lockdin_planner_preferences";
 
 const weekdays = [
   "Monday",
@@ -91,7 +90,7 @@ function getPriorityClass(priority: Priority) {
 function buildStudyPlan(
   tasks: Task[],
   preferences: PlannerPreferences
-): StudyBlock[] {
+): Omit<StudyBlock, "id" | "completed">[] {
   const incomplete = tasks.filter((task) => !task.completed);
 
   const priorityScore: Record<Priority, number> = {
@@ -125,70 +124,95 @@ function buildStudyPlan(
       const slot = availableCombinations[index];
 
       return {
-        id: `${task.id}-${slot.day}-${slot.time}`,
         day: slot.day,
         time: slot.time,
         subject: task.module,
         focus: task.title,
-        taskId: task.id,
-        durationMinutes: 90,
-        completed: false,
+        task_id: task.id,
+        duration_minutes: 90,
         location: preferences.preferredLocation || "Study space",
       };
     });
 }
 
 export default function PlannerPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [studyPlan, setStudyPlan] = useState<StudyBlock[]>([]);
+  const { tasks: providerTasks, loading: tasksLoading } = useTasks();
+  const {
+    studyBlocks: providerStudyBlocks,
+    loading: studyPlanLoading,
+    refreshStudyBlocks,
+  } = useStudyPlan();
+
   const [preferences, setPreferences] =
     useState<PlannerPreferences>(defaultPreferences);
-  const [loaded, setLoaded] = useState(false);
+  const [preferencesLoading, setPreferencesLoading] = useState(true);
+  const [savingPreferences, setSavingPreferences] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
-    const savedTasks = localStorage.getItem(TASKS_STORAGE_KEY);
-    const savedPlan = localStorage.getItem(STUDY_PLAN_STORAGE_KEY);
-    const savedPreferences = localStorage.getItem(PLANNER_PREFERENCES_KEY);
+    async function initialisePlanner() {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-    if (savedTasks) {
-      try {
-        setTasks(JSON.parse(savedTasks));
-      } catch {
-        setTasks([]);
+      if (userError || !user) {
+        window.location.href = "/login";
+        return;
       }
+
+      const { data, error } = await supabase
+        .from("planner_preferences")
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (!error && data) {
+        setPreferences({
+          availableDays: Array.isArray(data.available_days)
+            ? data.available_days
+            : defaultPreferences.availableDays,
+          availableTimeSlots: Array.isArray(data.available_time_slots)
+            ? data.available_time_slots
+            : defaultPreferences.availableTimeSlots,
+          preferredLocation:
+            data.preferred_location || defaultPreferences.preferredLocation,
+        });
+      }
+
+      setPreferencesLoading(false);
+      setAuthChecked(true);
     }
 
-    if (savedPlan) {
-      try {
-        setStudyPlan(JSON.parse(savedPlan));
-      } catch {
-        setStudyPlan([]);
-      }
-    }
-
-    if (savedPreferences) {
-      try {
-        setPreferences(JSON.parse(savedPreferences));
-      } catch {
-        setPreferences(defaultPreferences);
-      }
-    }
-
-    setLoaded(true);
+    initialisePlanner();
   }, []);
 
-  useEffect(() => {
-    if (!loaded) return;
-    localStorage.setItem(STUDY_PLAN_STORAGE_KEY, JSON.stringify(studyPlan));
-  }, [studyPlan, loaded]);
+  const tasks = useMemo<Task[]>(() => {
+    return (providerTasks as any[]).map((task) => ({
+      id: task.id,
+      title: task.title,
+      module: task.module,
+      dueDate: task.dueDate ?? task.due_date ?? "",
+      priority: task.priority,
+      completed: task.completed,
+    }));
+  }, [providerTasks]);
 
-  useEffect(() => {
-    if (!loaded) return;
-    localStorage.setItem(
-      PLANNER_PREFERENCES_KEY,
-      JSON.stringify(preferences)
-    );
-  }, [preferences, loaded]);
+  const studyPlan = useMemo<StudyBlock[]>(() => {
+    return (providerStudyBlocks as any[]).map((session) => ({
+      id: session.id,
+      day: session.day,
+      time: session.time,
+      subject: session.subject,
+      focus: session.focus,
+      task_id: session.task_id ?? null,
+      duration_minutes: session.duration_minutes ?? 90,
+      completed: session.completed,
+      location: session.location ?? "Study space",
+    }));
+  }, [providerStudyBlocks]);
+
+  const loading = !authChecked || tasksLoading || studyPlanLoading || preferencesLoading;
 
   const incompleteTasks = useMemo(
     () => tasks.filter((task) => !task.completed),
@@ -198,7 +222,16 @@ export default function PlannerPage() {
   const planningStats = useMemo(() => {
     const completedSessions = studyPlan.filter((session) => session.completed).length;
     const pendingSessions = studyPlan.filter((session) => !session.completed).length;
-    const totalHours = Math.round((studyPlan.length * 90) / 60);
+
+    const totalHours =
+      Math.round(
+        (studyPlan.reduce(
+          (sum, session) => sum + (session.duration_minutes ?? 90),
+          0
+        ) /
+          60) *
+          10
+      ) / 10;
 
     const nextTask = [...incompleteTasks].sort(
       (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
@@ -212,36 +245,131 @@ export default function PlannerPage() {
     };
   }, [studyPlan, incompleteTasks]);
 
-  function regeneratePlan() {
-    setStudyPlan(buildStudyPlan(tasks, preferences));
-  }
+  async function savePreferences(nextPreferences: PlannerPreferences) {
+    setPreferences(nextPreferences);
+    setSavingPreferences(true);
 
-  function toggleSessionComplete(id: string) {
-    setStudyPlan((prev) =>
-      prev.map((session) =>
-        session.id === id
-          ? { ...session, completed: !session.completed }
-          : session
-      )
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      window.location.href = "/login";
+      return;
+    }
+
+    const { error } = await supabase.from("planner_preferences").upsert(
+      {
+        user_id: user.id,
+        available_days: nextPreferences.availableDays,
+        available_time_slots: nextPreferences.availableTimeSlots,
+        preferred_location: nextPreferences.preferredLocation,
+      },
+      { onConflict: "user_id" }
     );
+
+    if (error) {
+      console.error("Error saving planner preferences:", error.message);
+    }
+
+    setSavingPreferences(false);
   }
 
-  function toggleAvailableDay(day: string) {
-    setPreferences((prev) => ({
-      ...prev,
-      availableDays: prev.availableDays.includes(day)
-        ? prev.availableDays.filter((item) => item !== day)
-        : [...prev.availableDays, day],
-    }));
+  async function regeneratePlan() {
+    const generatedPlan = buildStudyPlan(tasks, preferences);
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      window.location.href = "/login";
+      return;
+    }
+
+    const { error: deleteError } = await supabase
+      .from("study_blocks")
+      .delete()
+      .eq("user_id", user.id);
+
+    if (deleteError) {
+      console.error("Error clearing old study plan:", deleteError.message);
+      return;
+    }
+
+    if (generatedPlan.length > 0) {
+      const { error: insertError } = await supabase.from("study_blocks").insert(
+        generatedPlan.map((session) => ({
+          user_id: user.id,
+          day: session.day,
+          time: session.time,
+          subject: session.subject,
+          focus: session.focus,
+          task_id: session.task_id,
+          duration_minutes: session.duration_minutes,
+          completed: false,
+          location: session.location,
+        }))
+      );
+
+      if (insertError) {
+        console.error("Error generating study plan:", insertError.message);
+        return;
+      }
+    }
+
+    await refreshStudyBlocks();
   }
 
-  function toggleAvailableTimeSlot(slot: string) {
-    setPreferences((prev) => ({
-      ...prev,
-      availableTimeSlots: prev.availableTimeSlots.includes(slot)
-        ? prev.availableTimeSlots.filter((item) => item !== slot)
-        : [...prev.availableTimeSlots, slot],
-    }));
+  async function toggleSessionComplete(id: string, completed: boolean) {
+    const { error } = await supabase
+      .from("study_blocks")
+      .update({ completed: !completed })
+      .eq("id", id);
+
+    if (error) {
+      console.error("Error updating study session:", error.message);
+      return;
+    }
+
+    await refreshStudyBlocks();
+  }
+
+  async function toggleAvailableDay(day: string) {
+    const nextPreferences: PlannerPreferences = {
+      ...preferences,
+      availableDays: preferences.availableDays.includes(day)
+        ? preferences.availableDays.filter((item) => item !== day)
+        : [...preferences.availableDays, day],
+    };
+
+    await savePreferences(nextPreferences);
+  }
+
+  async function toggleAvailableTimeSlot(slot: string) {
+    const nextPreferences: PlannerPreferences = {
+      ...preferences,
+      availableTimeSlots: preferences.availableTimeSlots.includes(slot)
+        ? preferences.availableTimeSlots.filter((item) => item !== slot)
+        : [...preferences.availableTimeSlots, slot],
+    };
+
+    await savePreferences(nextPreferences);
+  }
+
+  async function updatePreferredLocation(value: string) {
+    const nextPreferences: PlannerPreferences = {
+      ...preferences,
+      preferredLocation: value,
+    };
+
+    setPreferences(nextPreferences);
+  }
+
+  async function savePreferredLocationOnBlur() {
+    await savePreferences(preferences);
   }
 
   return (
@@ -269,8 +397,12 @@ export default function PlannerPage() {
               </button>
 
               <div className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm text-slate-300">
-                {planningStats.totalHours} planned study hour
-                {planningStats.totalHours === 1 ? "" : "s"}
+                {loading ? "Loading..." : planningStats.totalHours} planned study hour
+                {loading || planningStats.totalHours === 1 ? "" : "s"}
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm text-slate-300">
+                {savingPreferences ? "Saving preferences..." : "Account-synced planner"}
               </div>
             </div>
           </section>
@@ -338,12 +470,8 @@ export default function PlannerPage() {
                   <input
                     type="text"
                     value={preferences.preferredLocation}
-                    onChange={(e) =>
-                      setPreferences((prev) => ({
-                        ...prev,
-                        preferredLocation: e.target.value,
-                      }))
-                    }
+                    onChange={(e) => updatePreferredLocation(e.target.value)}
+                    onBlur={savePreferredLocationOnBlur}
                     placeholder="e.g. Library, Home desk, Campus café"
                     className="w-full bg-transparent text-white outline-none placeholder:text-slate-500"
                   />
@@ -359,26 +487,30 @@ export default function PlannerPage() {
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
               <p className="text-sm text-slate-400">Planned Sessions</p>
-              <p className="mt-3 text-4xl font-bold">{studyPlan.length}</p>
+              <p className="mt-3 text-4xl font-bold">
+                {loading ? "..." : studyPlan.length}
+              </p>
             </div>
 
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
               <p className="text-sm text-slate-400">Completed Sessions</p>
               <p className="mt-3 text-4xl font-bold">
-                {planningStats.completedSessions}
+                {loading ? "..." : planningStats.completedSessions}
               </p>
             </div>
 
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
               <p className="text-sm text-slate-400">Pending Sessions</p>
               <p className="mt-3 text-4xl font-bold">
-                {planningStats.pendingSessions}
+                {loading ? "..." : planningStats.pendingSessions}
               </p>
             </div>
 
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
               <p className="text-sm text-slate-400">Active Tasks</p>
-              <p className="mt-3 text-4xl font-bold">{incompleteTasks.length}</p>
+              <p className="mt-3 text-4xl font-bold">
+                {loading ? "..." : incompleteTasks.length}
+              </p>
             </div>
           </section>
 
@@ -389,15 +521,19 @@ export default function PlannerPage() {
               </div>
 
               <h2 className="mt-4 text-3xl font-semibold">
-                {planningStats.nextTask
-                  ? "Your next most important task is already being prioritised"
-                  : "You’re ready to build your next study cycle"}
+                {loading
+                  ? "Loading your plan..."
+                  : planningStats.nextTask
+                    ? "Your next most important task is already being prioritised"
+                    : "You’re ready to build your next study cycle"}
               </h2>
 
               <p className="mt-4 max-w-3xl text-base leading-8 text-slate-300">
-                {planningStats.nextTask
-                  ? `Your upcoming work is being scheduled around ${planningStats.nextTask.module}. The planner is weighting urgency and priority first, then fitting sessions into your available study windows.`
-                  : "Once you add tasks, LockdIn will generate a balanced weekly study plan automatically."}
+                {loading
+                  ? "Syncing tasks and study sessions from your account."
+                  : planningStats.nextTask
+                    ? `Your upcoming work is being scheduled around ${planningStats.nextTask.module}. The planner is weighting urgency and priority first, then fitting sessions into your available study windows.`
+                    : "Once you add tasks, LockdIn will generate a balanced weekly study plan automatically."}
               </p>
 
               {planningStats.nextTask ? (
@@ -460,7 +596,11 @@ export default function PlannerPage() {
             </div>
           </section>
 
-          {studyPlan.length === 0 ? (
+          {loading ? (
+            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-400">
+              Loading your planner...
+            </div>
+          ) : studyPlan.length === 0 ? (
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-400">
               Add tasks and set at least one available day and one time slot to generate your study plan.
             </div>
@@ -478,7 +618,9 @@ export default function PlannerPage() {
                   <button
                     key={session.id}
                     type="button"
-                    onClick={() => toggleSessionComplete(session.id)}
+                    onClick={() =>
+                      toggleSessionComplete(session.id, session.completed)
+                    }
                     className={`rounded-2xl border p-6 text-left transition ${
                       session.completed
                         ? "border-emerald-500/30 bg-emerald-500/10"
@@ -510,7 +652,7 @@ export default function PlannerPage() {
                       Location: {session.location}
                     </p>
                     <p className="mt-2 text-sm text-slate-500">
-                      {session.durationMinutes} minute focus block
+                      {session.duration_minutes} minute focus block
                     </p>
                   </button>
                 ))}

@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { useTasks } from "@/components/TasksProvider";
+import { useStudyPlan } from "@/components/StudyPlanProvider";
 
 type Priority = "High" | "Medium" | "Low";
 
@@ -59,19 +61,6 @@ type ActiveFilter =
   | "overdue"
   | "urgent"
   | "highPriority";
-
-const TASKS_STORAGE_KEY = "lockdin_tasks";
-const STUDY_PLAN_STORAGE_KEY = "lockdin_study_plan";
-
-function safeParseArray<T>(value: string | null): T[] {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
 
 function startOfToday() {
   const today = new Date();
@@ -641,19 +630,40 @@ function DeltaPill({
 }
 
 export default function PerformancePage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [studyPlan, setStudyPlan] = useState<StudyBlock[]>([]);
+  const { tasks: providerTasks, loading: tasksLoading } = useTasks();
+  const { studyBlocks: providerStudyBlocks, loading: studyBlocksLoading } =
+    useStudyPlan();
+
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("all");
   const [openInfoCard, setOpenInfoCard] = useState<
     "cooked" | "momentum" | "consistency" | null
   >(null);
 
-  useEffect(() => {
-    setTasks(safeParseArray<Task>(localStorage.getItem(TASKS_STORAGE_KEY)));
-    setStudyPlan(
-      safeParseArray<StudyBlock>(localStorage.getItem(STUDY_PLAN_STORAGE_KEY))
-    );
-  }, []);
+  const tasks = useMemo<Task[]>(() => {
+    return (providerTasks as any[]).map((task) => ({
+      id: task.id,
+      title: task.title,
+      module: task.module,
+      dueDate: task.dueDate ?? task.due_date ?? "",
+      priority: task.priority,
+      completed: task.completed,
+    }));
+  }, [providerTasks]);
+
+  const studyPlan = useMemo<StudyBlock[]>(() => {
+    return (providerStudyBlocks as any[]).map((block) => ({
+      id: block.id,
+      day: block.day,
+      time: block.time,
+      subject: block.subject,
+      focus: block.focus,
+      taskId: block.taskId ?? block.task_id ?? "",
+      durationMinutes: block.durationMinutes ?? block.duration_minutes ?? 90,
+      completed: block.completed,
+    }));
+  }, [providerStudyBlocks]);
+
+  const loading = tasksLoading || studyBlocksLoading;
 
   const analytics = useMemo(() => {
     const totalTasks = tasks.length;
@@ -1019,19 +1029,23 @@ export default function PerformancePage() {
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
               <p className="text-sm text-slate-400">Task Completion</p>
-              <p className="mt-3 text-4xl font-bold">{analytics.taskCompletionRate}%</p>
+              <p className="mt-3 text-4xl font-bold">
+                {loading ? "..." : analytics.taskCompletionRate}%
+              </p>
             </div>
 
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
               <p className="text-sm text-slate-400">Planner Completion</p>
               <p className="mt-3 text-4xl font-bold">
-                {analytics.plannerCompletionRate}%
+                {loading ? "..." : analytics.plannerCompletionRate}%
               </p>
             </div>
 
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
               <p className="text-sm text-slate-400">Planned Hours</p>
-              <p className="mt-3 text-4xl font-bold">{analytics.totalPlannedHours}h</p>
+              <p className="mt-3 text-4xl font-bold">
+                {loading ? "..." : analytics.totalPlannedHours}h
+              </p>
             </div>
 
             <button
@@ -1045,9 +1059,11 @@ export default function PerformancePage() {
             >
               <p className="text-sm text-slate-400">Cooked Score</p>
               <div className="mt-3 flex items-end gap-3">
-                <p className="text-4xl font-bold">{analytics.cooked.score}</p>
+                <p className="text-4xl font-bold">
+                  {loading ? "..." : analytics.cooked.score}
+                </p>
                 <span className={`rounded-full px-3 py-1 text-xs font-medium ${cookedTone.pill}`}>
-                  {analytics.cooked.status}
+                  {loading ? "Loading" : analytics.cooked.status}
                 </span>
               </div>
             </button>
@@ -1058,9 +1074,13 @@ export default function PerformancePage() {
               <div className="inline-flex rounded-full bg-blue-500/15 px-3 py-1 text-xs font-medium text-blue-300">
                 AI Performance Coach
               </div>
-              <h2 className="mt-4 text-3xl font-semibold">{analytics.coachTitle}</h2>
+              <h2 className="mt-4 text-3xl font-semibold">
+                {loading ? "Loading your performance..." : analytics.coachTitle}
+              </h2>
               <p className="mt-4 max-w-3xl text-base leading-8 text-slate-300">
-                {analytics.coachSummary}
+                {loading
+                  ? "Syncing your tasks and planner data."
+                  : analytics.coachSummary}
               </p>
 
               <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/60 p-5">
@@ -1068,7 +1088,7 @@ export default function PerformancePage() {
                   Recommended next step
                 </p>
                 <p className="mt-3 text-sm leading-7 text-white">
-                  {analytics.coachAction}
+                  {loading ? "Loading recommendation..." : analytics.coachAction}
                 </p>
               </div>
             </div>
@@ -1078,11 +1098,13 @@ export default function PerformancePage() {
                 <div>
                   <p className="text-sm text-slate-400">Live cooked pressure</p>
                   <div className="mt-3 flex items-end gap-3">
-                    <p className="text-5xl font-bold">{analytics.cooked.score}</p>
+                    <p className="text-5xl font-bold">
+                      {loading ? "..." : analytics.cooked.score}
+                    </p>
                     <span
                       className={`rounded-full px-3 py-1 text-xs font-medium ${cookedTone.pill}`}
                     >
-                      {analytics.cooked.status}
+                      {loading ? "Loading" : analytics.cooked.status}
                     </span>
                   </div>
                 </div>
@@ -1096,27 +1118,29 @@ export default function PerformancePage() {
                 <div className="h-3 rounded-full bg-slate-800">
                   <div
                     className={`h-3 rounded-full ${cookedTone.bar} transition-all duration-500`}
-                    style={{ width: `${analytics.cooked.score}%` }}
+                    style={{ width: `${loading ? 0 : analytics.cooked.score}%` }}
                   />
                 </div>
               </button>
 
               <p className="mt-5 text-sm leading-7 text-slate-300">
-                {analytics.cooked.headline}
+                {loading ? "Loading cooked score analysis..." : analytics.cooked.headline}
               </p>
 
               <div className="mt-6 grid gap-3">
-                {analytics.cooked.reasons.map((reason) => (
-                  <div
-                    key={reason}
-                    className="rounded-2xl border border-white/5 bg-slate-950/70 px-4 py-3 text-sm text-slate-300"
-                  >
-                    {reason}
-                  </div>
-                ))}
+                {(loading ? ["Loading pressure reasons..."] : analytics.cooked.reasons).map(
+                  (reason) => (
+                    <div
+                      key={reason}
+                      className="rounded-2xl border border-white/5 bg-slate-950/70 px-4 py-3 text-sm text-slate-300"
+                    >
+                      {reason}
+                    </div>
+                  )
+                )}
               </div>
 
-              {analytics.bestRecoveryAction && (
+              {!loading && analytics.bestRecoveryAction && (
                 <div className="mt-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-emerald-300">
                     Best recovery action
@@ -1135,8 +1159,8 @@ export default function PerformancePage() {
           <section className="grid gap-6 xl:grid-cols-3">
             <ScoreCard
               title="Cooked Score"
-              score={analytics.cooked.score}
-              label={analytics.cooked.status}
+              score={loading ? 0 : analytics.cooked.score}
+              label={loading ? "Loading" : analytics.cooked.status}
               accentPillClass={cookedTone.pill}
               barClass={cookedTone.bar}
               isActive={activeFilter === "cooked"}
@@ -1155,8 +1179,8 @@ export default function PerformancePage() {
 
             <ScoreCard
               title="Momentum Score"
-              score={analytics.momentumScore}
-              label={getMomentumLabel(analytics.momentumScore)}
+              score={loading ? 0 : analytics.momentumScore}
+              label={loading ? "Loading" : getMomentumLabel(analytics.momentumScore)}
               accentPillClass={momentumTone.pill}
               barClass={momentumTone.bar}
               isActive={activeFilter === "momentum"}
@@ -1175,8 +1199,8 @@ export default function PerformancePage() {
 
             <ScoreCard
               title="Consistency Score"
-              score={analytics.consistencyScore}
-              label={getConsistencyLabel(analytics.consistencyScore)}
+              score={loading ? 0 : analytics.consistencyScore}
+              label={loading ? "Loading" : getConsistencyLabel(analytics.consistencyScore)}
               accentPillClass={consistencyTone.pill}
               barClass={consistencyTone.bar}
               isActive={activeFilter === "consistency"}
@@ -1226,7 +1250,9 @@ export default function PerformancePage() {
           <section className="grid gap-6 xl:grid-cols-[1fr_1fr_1fr]">
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
               <p className="text-sm text-slate-400">Biggest Threat</p>
-              {analytics.biggestThreat ? (
+              {loading ? (
+                <p className="mt-3 text-slate-400">Loading threat analysis...</p>
+              ) : analytics.biggestThreat ? (
                 <>
                   <p className="mt-3 text-xl font-semibold">{analytics.biggestThreat.title}</p>
                   <p className="mt-2 text-sm text-slate-400">
@@ -1250,7 +1276,9 @@ export default function PerformancePage() {
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
               <p className="text-sm text-slate-400">Today Focus</p>
               <div className="mt-4 space-y-3">
-                {analytics.todayFocusTasks.length === 0 ? (
+                {loading ? (
+                  <p className="text-slate-400">Loading focus items...</p>
+                ) : analytics.todayFocusTasks.length === 0 ? (
                   <p className="text-slate-400">No urgent focus items. Very composed.</p>
                 ) : (
                   analytics.todayFocusTasks.map((task, index) => (
@@ -1279,21 +1307,27 @@ export default function PerformancePage() {
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
                     Overdue tasks
                   </p>
-                  <p className="mt-2 text-3xl font-bold">{analytics.overdueTasks}</p>
+                  <p className="mt-2 text-3xl font-bold">
+                    {loading ? "..." : analytics.overdueTasks}
+                  </p>
                 </div>
 
                 <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
                     Due this week
                   </p>
-                  <p className="mt-2 text-3xl font-bold">{analytics.dueThisWeek}</p>
+                  <p className="mt-2 text-3xl font-bold">
+                    {loading ? "..." : analytics.dueThisWeek}
+                  </p>
                 </div>
 
                 <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
                     Active workload
                   </p>
-                  <p className="mt-2 text-3xl font-bold">{analytics.pendingTasks}</p>
+                  <p className="mt-2 text-3xl font-bold">
+                    {loading ? "..." : analytics.pendingTasks}
+                  </p>
                 </div>
               </div>
             </div>
@@ -1311,7 +1345,11 @@ export default function PerformancePage() {
               </div>
 
               <div className="mt-6 space-y-4">
-                {analytics.rankedRecoveryActions.length === 0 ? (
+                {loading ? (
+                  <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
+                    Loading recovery moves...
+                  </div>
+                ) : analytics.rankedRecoveryActions.length === 0 ? (
                   <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
                     Nothing to recover right now. You are suspiciously locked in.
                   </div>
@@ -1367,28 +1405,28 @@ export default function PerformancePage() {
                 <div className="rounded-2xl bg-slate-950 p-5">
                   <p className="text-sm text-slate-400">Most Pressured Module</p>
                   <p className="mt-2 text-lg font-semibold">
-                    {analytics.mostPressuredModule?.module ?? "No data yet"}
+                    {loading ? "Loading..." : analytics.mostPressuredModule?.module ?? "No data yet"}
                   </p>
                 </div>
 
                 <div className="rounded-2xl bg-slate-950 p-5">
                   <p className="text-sm text-slate-400">Strongest Module</p>
                   <p className="mt-2 text-lg font-semibold">
-                    {analytics.strongestModule?.module ?? "No data yet"}
+                    {loading ? "Loading..." : analytics.strongestModule?.module ?? "No data yet"}
                   </p>
                 </div>
 
                 <div className="rounded-2xl bg-slate-950 p-5">
                   <p className="text-sm text-slate-400">High Priority Open</p>
                   <p className="mt-2 text-lg font-semibold">
-                    {analytics.highPriorityOpen}
+                    {loading ? "..." : analytics.highPriorityOpen}
                   </p>
                 </div>
 
                 <div className="rounded-2xl bg-slate-950 p-5">
                   <p className="text-sm text-slate-400">Sessions Planned</p>
                   <p className="mt-2 text-lg font-semibold">
-                    {analytics.totalSessions}
+                    {loading ? "..." : analytics.totalSessions}
                   </p>
                 </div>
               </div>
@@ -1403,12 +1441,16 @@ export default function PerformancePage() {
                   <p className="mt-2 text-sm text-slate-400">{getFilterTitle()}</p>
                 </div>
                 <span className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
-                  {analytics.filteredTasks.length} shown
+                  {loading ? "..." : analytics.filteredTasks.length} shown
                 </span>
               </div>
 
               <div className="mt-6 space-y-4">
-                {analytics.filteredTasks.length === 0 ? (
+                {loading ? (
+                  <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
+                    Loading tasks...
+                  </div>
+                ) : analytics.filteredTasks.length === 0 ? (
                   <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
                     No matching tasks for this filter.
                   </div>
@@ -1472,12 +1514,16 @@ export default function PerformancePage() {
                   </p>
                 </div>
                 <span className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
-                  {analytics.filteredSessions.length} shown
+                  {loading ? "..." : analytics.filteredSessions.length} shown
                 </span>
               </div>
 
               <div className="mt-6 space-y-4">
-                {analytics.filteredSessions.length === 0 ? (
+                {loading ? (
+                  <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
+                    Loading planner activity...
+                  </div>
+                ) : analytics.filteredSessions.length === 0 ? (
                   <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
                     No matching planner activity for this filter.
                   </div>
@@ -1518,13 +1564,17 @@ export default function PerformancePage() {
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-semibold">Module Breakdown</h2>
                 <span className="text-sm text-slate-400">
-                  {analytics.moduleStats.length} module
-                  {analytics.moduleStats.length === 1 ? "" : "s"}
+                  {loading ? "..." : analytics.moduleStats.length} module
+                  {!loading && analytics.moduleStats.length === 1 ? "" : "s"}
                 </span>
               </div>
 
               <div className="mt-6 space-y-4">
-                {analytics.moduleStats.length === 0 ? (
+                {loading ? (
+                  <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
+                    Loading module data...
+                  </div>
+                ) : analytics.moduleStats.length === 0 ? (
                   <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
                     No task or planner data yet.
                   </div>
@@ -1574,27 +1624,29 @@ export default function PerformancePage() {
                 <div className="rounded-2xl bg-slate-950 p-5">
                   <p className="text-sm text-slate-400">Sessions Completed</p>
                   <p className="mt-2 text-lg font-semibold">
-                    {analytics.completedSessions}
+                    {loading ? "..." : analytics.completedSessions}
                   </p>
                 </div>
 
                 <div className="rounded-2xl bg-slate-950 p-5">
                   <p className="text-sm text-slate-400">Open Study Blocks</p>
-                  <p className="mt-2 text-lg font-semibold">{analytics.openSessions}</p>
+                  <p className="mt-2 text-lg font-semibold">
+                    {loading ? "..." : analytics.openSessions}
+                  </p>
                 </div>
 
                 <div className="rounded-2xl bg-slate-950 p-5">
                   <p className="text-sm text-slate-400">Open Workload</p>
                   <p className="mt-2 text-lg font-semibold">
-                    {analytics.pendingTasks} active task
-                    {analytics.pendingTasks === 1 ? "" : "s"}
+                    {loading ? "..." : analytics.pendingTasks} active task
+                    {!loading && analytics.pendingTasks === 1 ? "" : "s"}
                   </p>
                 </div>
 
                 <div className="rounded-2xl bg-slate-950 p-5">
                   <p className="text-sm text-slate-400">Due Today / Tomorrow</p>
                   <p className="mt-2 text-lg font-semibold">
-                    {analytics.dueTodayOrTomorrow}
+                    {loading ? "..." : analytics.dueTodayOrTomorrow}
                   </p>
                 </div>
               </div>
