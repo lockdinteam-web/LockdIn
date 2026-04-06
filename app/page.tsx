@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useTasks } from "@/components/TasksProvider";
+import { supabase } from "@/lib/supabase";
 import {
   calculateCookedScore,
   getBestRecoveryAction,
@@ -130,11 +131,32 @@ function getHeroSubtitle(score: number) {
 export default function HomePage() {
   const { tasks: providerTasks, loading } = useTasks();
   const [studyBlocks, setStudyBlocks] = useState<StudyBlock[]>([]);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
     setStudyBlocks(
       safeParseArray<StudyBlock>(localStorage.getItem(STUDY_PLAN_STORAGE_KEY))
     );
+
+    async function checkAuth() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      setIsLoggedIn(!!user);
+    }
+
+    checkAuth();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(!!session?.user);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const tasks = useMemo<HomeTask[]>(() => {
@@ -338,10 +360,10 @@ export default function HomePage() {
                   </div>
 
                   <Link
-                    href="/login"
+                    href={isLoggedIn ? "/tasks" : "/login"}
                     className="inline-flex w-full items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium text-white transition hover:bg-white/10 sm:w-auto"
                   >
-                    Log in
+                    {isLoggedIn ? "Go to tasks" : "Log in"}
                   </Link>
                 </div>
 
