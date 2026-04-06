@@ -233,40 +233,6 @@ export default function DegreeTrackerPage() {
       return sum + (bestPossibleYearAverage * year.weight) / 100;
     }, 0);
 
-    const targetNeededByYear = (target: number) => {
-      return yearBreakdown.map((year) => {
-        if (year.totalCreditsEntered === 0) {
-          return {
-            yearId: year.id,
-            yearName: year.name,
-            neededAverage: null as number | null,
-          };
-        }
-
-        if (year.remainingCredits <= 0) {
-          return {
-            yearId: year.id,
-            yearName: year.name,
-            neededAverage: null as number | null,
-          };
-        }
-
-        const otherYearsContribution = yearBreakdown
-          .filter((y) => y.id !== year.id)
-          .reduce((sum, y) => sum + y.contributionSoFar, 0);
-
-        const neededWeightedContribution = target - otherYearsContribution;
-        const neededYearAverage =
-          year.weight > 0 ? (neededWeightedContribution * 100) / year.weight : null;
-
-        return {
-          yearId: year.id,
-          yearName: year.name,
-          neededAverage: neededYearAverage,
-        };
-      });
-    };
-
     return {
       totalYearWeight,
       yearBreakdown,
@@ -274,47 +240,8 @@ export default function DegreeTrackerPage() {
       currentClassification: getClassification(weightedAverageSoFar),
       maxPossibleAverage,
       bestPossibleClassification: getClassification(maxPossibleAverage),
-      firstRequirements: targetNeededByYear(70),
-      twoOneRequirements: targetNeededByYear(60),
-      twoTwoRequirements: targetNeededByYear(50),
-      thirdRequirements: targetNeededByYear(40),
     };
   }, [years, modules]);
-
-  const getNeededMessage = (neededAverage: number | null, label: string) => {
-    if (neededAverage === null) {
-      return `Not enough information yet for ${label}.`;
-    }
-
-    if (neededAverage <= 0) {
-      return `${label} is already secured based on the other entered years.`;
-    }
-
-    if (neededAverage > 100) {
-      return `${label} is no longer mathematically possible through this year alone.`;
-    }
-
-    if (neededAverage > 85) {
-      return `${label} is still possible, but it would require an exceptional year average.`;
-    }
-
-    if (neededAverage > 70) {
-      return `${label} is possible, but you need a very strong average in this year.`;
-    }
-
-    if (neededAverage > 60) {
-      return `${label} is within reach if you perform strongly.`;
-    }
-
-    return `${label} looks achievable from this year.`;
-  };
-
-  const getRequirementForYear = (
-    requirementList: { yearId: string; yearName: string; neededAverage: number | null }[],
-    yearId: string
-  ) => {
-    return requirementList.find((item) => item.yearId === yearId)?.neededAverage ?? null;
-  };
 
   return (
     <AppShell>
@@ -637,70 +564,6 @@ export default function DegreeTrackerPage() {
                       </div>
                     </div>
                   ))}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-                <h2 className="text-xl font-semibold">What you need by year</h2>
-
-                <div className="mt-4 space-y-4">
-                  {calculations.yearBreakdown.map((year) => {
-                    const firstNeeded = getRequirementForYear(
-                      calculations.firstRequirements,
-                      year.id
-                    );
-                    const twoOneNeeded = getRequirementForYear(
-                      calculations.twoOneRequirements,
-                      year.id
-                    );
-                    const twoTwoNeeded = getRequirementForYear(
-                      calculations.twoTwoRequirements,
-                      year.id
-                    );
-                    const thirdNeeded = getRequirementForYear(
-                      calculations.thirdRequirements,
-                      year.id
-                    );
-
-                    return (
-                      <div
-                        key={year.id}
-                        className="rounded-xl border border-slate-800 bg-slate-950/80 p-4"
-                      >
-                        <p className="text-lg font-semibold text-white">
-                          {year.name}
-                        </p>
-
-                        <div className="mt-4 space-y-3">
-                          {[
-                            { label: "First", value: firstNeeded },
-                            { label: "2:1", value: twoOneNeeded },
-                            { label: "2:2", value: twoTwoNeeded },
-                            { label: "Third", value: thirdNeeded },
-                          ].map((item) => (
-                            <div
-                              key={item.label}
-                              className="rounded-xl border border-slate-800 bg-slate-900/60 p-3"
-                            >
-                              <div className="flex items-center justify-between gap-4">
-                                <p className="font-medium text-white">
-                                  {item.label}
-                                </p>
-                                <p className="font-bold text-blue-300">
-                                  {item.value === null
-                                    ? "—"
-                                    : `${formatNumber(item.value)}%`}
-                                </p>
-                              </div>
-                              <p className="mt-2 text-sm leading-6 text-slate-400">
-                                {getNeededMessage(item.value, item.label)}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
                 </div>
               </div>
 
