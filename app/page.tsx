@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useTasks } from "@/components/TasksProvider";
 import {
   calculateCookedScore,
   getBestRecoveryAction,
@@ -11,7 +12,7 @@ import {
 
 type Priority = "High" | "Medium" | "Low";
 
-type Task = {
+type HomeTask = {
   id: string;
   title: string;
   module: string;
@@ -20,7 +21,6 @@ type Task = {
   completed: boolean;
 };
 
-const STORAGE_KEY = "lockdin_tasks";
 const STUDY_PLAN_STORAGE_KEY = "lockdin_study_plan";
 
 function getDaysUntil(dateString: string) {
@@ -128,15 +128,25 @@ function getHeroSubtitle(score: number) {
 }
 
 export default function HomePage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const { tasks: providerTasks, loading } = useTasks();
   const [studyBlocks, setStudyBlocks] = useState<StudyBlock[]>([]);
 
   useEffect(() => {
-    setTasks(safeParseArray<Task>(localStorage.getItem(STORAGE_KEY)));
     setStudyBlocks(
       safeParseArray<StudyBlock>(localStorage.getItem(STUDY_PLAN_STORAGE_KEY))
     );
   }, []);
+
+  const tasks = useMemo<HomeTask[]>(() => {
+    return (providerTasks as any[]).map((task) => ({
+      id: task.id,
+      title: task.title,
+      module: task.module,
+      dueDate: task.dueDate ?? task.due_date ?? "",
+      priority: task.priority,
+      completed: task.completed,
+    }));
+  }, [providerTasks]);
 
   const stats = useMemo(() => {
     const completed = tasks.filter((task) => task.completed).length;
@@ -163,19 +173,27 @@ export default function HomePage() {
 
     const upcoming = [...tasks]
       .filter((task) => !task.completed)
-      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+      .sort(
+        (a, b) =>
+          new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+      );
 
     const nextTask = upcoming[0] ?? null;
 
     const completionRate =
       tasks.length > 0 ? Math.round((completed / tasks.length) * 100) : 0;
 
-    const completedStudyBlocks = studyBlocks.filter((block) => block.completed).length;
-    const openStudyBlocks = studyBlocks.filter((block) => !block.completed).length;
+    const completedStudyBlocks = studyBlocks.filter(
+      (block) => block.completed
+    ).length;
+    const openStudyBlocks = studyBlocks.filter(
+      (block) => !block.completed
+    ).length;
 
     const studyHours =
       Math.round(
-        (studyBlocks.reduce((sum, block) => sum + block.durationMinutes, 0) / 60) *
+        (studyBlocks.reduce((sum, block) => sum + block.durationMinutes, 0) /
+          60) *
           10
       ) / 10;
 
@@ -219,11 +237,27 @@ export default function HomePage() {
         const bDays = getDaysUntil(b.dueDate);
 
         const aScore =
-          (aDays < 0 ? 100 : aDays === 0 ? 80 : aDays === 1 ? 65 : aDays <= 3 ? 45 : 20) +
+          (aDays < 0
+            ? 100
+            : aDays === 0
+              ? 80
+              : aDays === 1
+                ? 65
+                : aDays <= 3
+                  ? 45
+                  : 20) +
           (a.priority === "High" ? 25 : a.priority === "Medium" ? 15 : 8);
 
         const bScore =
-          (bDays < 0 ? 100 : bDays === 0 ? 80 : bDays === 1 ? 65 : bDays <= 3 ? 45 : 20) +
+          (bDays < 0
+            ? 100
+            : bDays === 0
+              ? 80
+              : bDays === 1
+                ? 65
+                : bDays <= 3
+                  ? 45
+                  : 20) +
           (b.priority === "High" ? 25 : b.priority === "Medium" ? 15 : 8);
 
         return bScore - aScore;
@@ -238,11 +272,27 @@ export default function HomePage() {
         const bDays = getDaysUntil(b.dueDate);
 
         const aValue =
-          (aDays < 0 ? 100 : aDays === 0 ? 90 : aDays === 1 ? 75 : aDays <= 3 ? 55 : 20) +
+          (aDays < 0
+            ? 100
+            : aDays === 0
+              ? 90
+              : aDays === 1
+                ? 75
+                : aDays <= 3
+                  ? 55
+                  : 20) +
           (a.priority === "High" ? 30 : a.priority === "Medium" ? 18 : 8);
 
         const bValue =
-          (bDays < 0 ? 100 : bDays === 0 ? 90 : bDays === 1 ? 75 : bDays <= 3 ? 55 : 20) +
+          (bDays < 0
+            ? 100
+            : bDays === 0
+              ? 90
+              : bDays === 1
+                ? 75
+                : bDays <= 3
+                  ? 55
+                  : 20) +
           (b.priority === "High" ? 30 : b.priority === "Medium" ? 18 : 8);
 
         return bValue - aValue;
@@ -281,9 +331,18 @@ export default function HomePage() {
           <section className="overflow-hidden rounded-[24px] border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(244,63,94,0.12),_transparent_25%),linear-gradient(180deg,#08122b_0%,#061021_100%)] p-4 shadow-[0_20px_80px_rgba(0,0,0,0.35)] sm:rounded-[32px] sm:p-8 md:p-10">
             <div className="grid gap-8 xl:grid-cols-[1.15fr_0.85fr] xl:items-center">
               <div className="max-w-3xl">
-                <div className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300 sm:px-4 sm:text-sm">
-                  <span className="h-2 w-2 rounded-full bg-blue-400" />
-                  Built for students who need to lock in
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300 sm:px-4 sm:text-sm">
+                    <span className="h-2 w-2 rounded-full bg-blue-400" />
+                    Built for students who need to lock in
+                  </div>
+
+                  <Link
+                    href="/login"
+                    className="inline-flex w-full items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium text-white transition hover:bg-white/10 sm:w-auto"
+                  >
+                    Log in
+                  </Link>
                 </div>
 
                 <h1 className="mt-5 text-3xl font-semibold tracking-tight text-white sm:mt-6 sm:text-4xl md:text-5xl xl:text-6xl">
@@ -291,16 +350,21 @@ export default function HomePage() {
                 </h1>
 
                 <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300 sm:mt-5 sm:text-base sm:leading-8 md:text-lg">
-                  LockdIn turns your tasks, deadlines, and study blocks into one clear
-                  academic command centre — so you always know what matters next.
+                  LockdIn turns your tasks, deadlines, and study blocks into one
+                  clear academic command centre — so you always know what matters
+                  next.
                 </p>
 
                 <div className="mt-6 flex flex-wrap gap-3">
                   <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300">
-                    {stats.pending} active task{stats.pending === 1 ? "" : "s"}
+                    {loading
+                      ? "Loading tasks..."
+                      : `${stats.pending} active task${
+                          stats.pending === 1 ? "" : "s"
+                        }`}
                   </div>
                   <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300">
-                    {stats.dueThisWeek} due this week
+                    {loading ? "Loading..." : `${stats.dueThisWeek} due this week`}
                   </div>
                   <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300">
                     {stats.studyHours} planned hours
@@ -332,12 +396,6 @@ export default function HomePage() {
                   >
                     Open degree tracker
                   </Link>
-                  <Link
-                    href="/login"
-                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-center text-sm font-medium text-white transition hover:bg-white/10 sm:w-auto"
-                  >
-                    Log in
-                  </Link>
                 </div>
               </div>
 
@@ -364,12 +422,12 @@ export default function HomePage() {
                                 cooked.score
                               )}`}
                             >
-                              {cooked.score}
+                              {loading ? "..." : cooked.score}
                             </span>
                             <span className="pb-2 text-xl text-slate-500">/100</span>
                           </div>
                           <p className="mt-2 text-sm font-medium text-white">
-                            {getCookedZone(cooked.score)}
+                            {loading ? "Loading..." : getCookedZone(cooked.score)}
                           </p>
                         </div>
 
@@ -378,7 +436,7 @@ export default function HomePage() {
                             Status
                           </p>
                           <p className="mt-1 text-sm font-semibold text-white">
-                            {cooked.status}
+                            {loading ? "Loading..." : cooked.status}
                           </p>
                         </div>
                       </div>
@@ -388,12 +446,14 @@ export default function HomePage() {
                           className={`h-full rounded-full transition-all duration-500 ${getCookedBarClass(
                             cooked.score
                           )}`}
-                          style={{ width: `${Math.max(8, cooked.score)}%` }}
+                          style={{
+                            width: `${Math.max(8, loading ? 8 : cooked.score)}%`,
+                          }}
                         />
                       </div>
 
                       <p className="mt-4 text-sm leading-6 text-slate-300">
-                        {getHeroSubtitle(cooked.score)}
+                        {loading ? "Loading your dashboard..." : getHeroSubtitle(cooked.score)}
                       </p>
                     </div>
 
@@ -403,9 +463,11 @@ export default function HomePage() {
                           Next move
                         </p>
                         <p className="mt-2 text-sm font-medium text-white">
-                          {bestRecoveryAction
-                            ? bestRecoveryAction.label
-                            : "You’re currently clear"}
+                          {loading
+                            ? "Loading..."
+                            : bestRecoveryAction
+                              ? bestRecoveryAction.label
+                              : "You’re currently clear"}
                         </p>
                       </div>
 
@@ -414,11 +476,13 @@ export default function HomePage() {
                           Momentum
                         </p>
                         <p className="mt-2 text-sm font-medium text-blue-300">
-                          {stats.completionRate >= 80
-                            ? "Strong"
-                            : stats.completionRate >= 50
-                              ? "Building"
-                              : "Needs work"}
+                          {loading
+                            ? "Loading..."
+                            : stats.completionRate >= 80
+                              ? "Strong"
+                              : stats.completionRate >= 50
+                                ? "Building"
+                                : "Needs work"}
                         </p>
                       </div>
                     </div>
@@ -442,22 +506,30 @@ export default function HomePage() {
           <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
             <div className="rounded-3xl border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.2)] sm:p-6">
               <p className="text-sm text-slate-400">Total tasks</p>
-              <p className="mt-3 text-3xl font-semibold sm:text-4xl">{tasks.length}</p>
+              <p className="mt-3 text-3xl font-semibold sm:text-4xl">
+                {loading ? "..." : tasks.length}
+              </p>
             </div>
 
             <div className="rounded-3xl border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.2)] sm:p-6">
               <p className="text-sm text-slate-400">Completed</p>
-              <p className="mt-3 text-3xl font-semibold sm:text-4xl">{stats.completed}</p>
+              <p className="mt-3 text-3xl font-semibold sm:text-4xl">
+                {loading ? "..." : stats.completed}
+              </p>
             </div>
 
             <div className="rounded-3xl border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.2)] sm:p-6">
               <p className="text-sm text-slate-400">Urgent</p>
-              <p className="mt-3 text-3xl font-semibold sm:text-4xl">{stats.urgent}</p>
+              <p className="mt-3 text-3xl font-semibold sm:text-4xl">
+                {loading ? "..." : stats.urgent}
+              </p>
             </div>
 
             <div className="rounded-3xl border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_30px_rgba(0,0,0,0.2)] sm:p-6">
               <p className="text-sm text-slate-400">Completion rate</p>
-              <p className="mt-3 text-3xl font-semibold sm:text-4xl">{stats.completionRate}%</p>
+              <p className="mt-3 text-3xl font-semibold sm:text-4xl">
+                {loading ? "..." : `${stats.completionRate}%`}
+              </p>
             </div>
           </section>
 
@@ -479,21 +551,23 @@ export default function HomePage() {
                         cooked.score
                       )}`}
                     >
-                      {cooked.score}
+                      {loading ? "..." : cooked.score}
                     </span>
                     <span className="pb-2 text-xl text-slate-500">/100</span>
                   </div>
 
                   <p className="mt-3 text-lg font-medium text-white">
-                    Status: {cooked.status}
+                    Status: {loading ? "Loading..." : cooked.status}
                   </p>
 
                   <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base sm:leading-8">
-                    {cooked.headline}
+                    {loading ? "Loading your score..." : cooked.headline}
                   </p>
 
                   <p className="mt-3 text-sm text-slate-400">
-                    {getMotivationLine(cooked.score, stats.pending, stats.overdue)}
+                    {loading
+                      ? "Syncing your dashboard..."
+                      : getMotivationLine(cooked.score, stats.pending, stats.overdue)}
                   </p>
 
                   <div className="mt-6 h-3 w-full overflow-hidden rounded-full bg-white/10">
@@ -501,7 +575,9 @@ export default function HomePage() {
                       className={`h-full rounded-full transition-all duration-500 ${getCookedBarClass(
                         cooked.score
                       )}`}
-                      style={{ width: `${Math.max(6, cooked.score)}%` }}
+                      style={{
+                        width: `${Math.max(6, loading ? 6 : cooked.score)}%`,
+                      }}
                     />
                   </div>
                 </div>
@@ -512,12 +588,17 @@ export default function HomePage() {
                   </p>
 
                   <ul className="mt-5 space-y-3">
-                    {cooked.reasons.map((reason) => (
-                      <li key={reason} className="flex items-start gap-3 text-sm text-slate-200">
-                        <span className="mt-2 h-2 w-2 rounded-full bg-blue-400" />
-                        <span>{reason}</span>
-                      </li>
-                    ))}
+                    {(loading ? ["Loading your risk factors..."] : cooked.reasons).map(
+                      (reason) => (
+                        <li
+                          key={reason}
+                          className="flex items-start gap-3 text-sm text-slate-200"
+                        >
+                          <span className="mt-2 h-2 w-2 rounded-full bg-blue-400" />
+                          <span>{reason}</span>
+                        </li>
+                      )
+                    )}
                   </ul>
 
                   <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -525,7 +606,11 @@ export default function HomePage() {
                       Fastest recovery move
                     </p>
 
-                    {bestRecoveryAction ? (
+                    {loading ? (
+                      <p className="mt-3 text-sm leading-7 text-slate-300">
+                        Loading your best move...
+                      </p>
+                    ) : bestRecoveryAction ? (
                       <>
                         <p className="mt-3 text-sm leading-7 text-white">
                           {bestRecoveryAction.label}
@@ -571,7 +656,11 @@ export default function HomePage() {
                 </Link>
               </div>
 
-              {biggestThreat ? (
+              {loading ? (
+                <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 text-slate-300 sm:p-6">
+                  Loading your biggest threat...
+                </div>
+              ) : biggestThreat ? (
                 <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 sm:p-6">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
@@ -622,10 +711,10 @@ export default function HomePage() {
                     AI Coach
                   </div>
                   <h2 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
-                    {coachTitle}
+                    {loading ? "Loading..." : coachTitle}
                   </h2>
                   <p className="mt-4 text-sm leading-7 text-slate-300 sm:text-base sm:leading-8">
-                    {coachMessage}
+                    {loading ? "Syncing your coach view..." : coachMessage}
                   </p>
                 </div>
 
@@ -634,18 +723,20 @@ export default function HomePage() {
                     Recommended next step
                   </p>
                   <p className="mt-3 text-sm leading-7 text-white">
-                    {stats.overdue > 0
-                      ? "Open Tasks and complete the most overdue item first."
-                      : stats.highPriority > 0
-                        ? "Finish your next high-priority task before switching context."
-                        : stats.pending > 0
-                          ? "Use Planner to assign focused time to your remaining workload."
-                          : "Use Planner to map out your next study block while you’re ahead."}
+                    {loading
+                      ? "Loading recommendation..."
+                      : stats.overdue > 0
+                        ? "Open Tasks and complete the most overdue item first."
+                        : stats.highPriority > 0
+                          ? "Finish your next high-priority task before switching context."
+                          : stats.pending > 0
+                            ? "Use Planner to assign focused time to your remaining workload."
+                            : "Use Planner to map out your next study block while you’re ahead."}
                   </p>
                 </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-5 md:gap-4">
+              <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-4 md:gap-4">
                 <Link
                   href="/tasks"
                   className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
@@ -670,12 +761,6 @@ export default function HomePage() {
                 >
                   Open degree tracker
                 </Link>
-                <Link
-                  href="/login"
-                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
-                >
-                  Log in
-                </Link>
               </div>
             </div>
 
@@ -690,7 +775,9 @@ export default function HomePage() {
 
                 <div className="rounded-2xl border border-white/10 bg-[#101b38] p-4">
                   <p className="text-sm text-slate-400">Open study blocks</p>
-                  <p className="mt-2 text-3xl font-semibold">{stats.openStudyBlocks}</p>
+                  <p className="mt-2 text-3xl font-semibold">
+                    {stats.openStudyBlocks}
+                  </p>
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-[#101b38] p-4">
@@ -716,7 +803,11 @@ export default function HomePage() {
               </div>
 
               <div className="mt-6 space-y-4">
-                {todayFocus.length === 0 ? (
+                {loading ? (
+                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                    Loading focus tasks...
+                  </div>
+                ) : todayFocus.length === 0 ? (
                   <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
                     No active tasks right now. That board is looking clean.
                   </div>
@@ -731,7 +822,7 @@ export default function HomePage() {
                           <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
                             Focus {index + 1}
                           </p>
-                          <p className="mt-2 text-base font-medium break-words text-white">
+                          <p className="mt-2 break-words text-base font-medium text-white">
                             {task.title}
                           </p>
                           <p className="mt-2 text-sm text-slate-400">{task.module}</p>
@@ -802,25 +893,17 @@ export default function HomePage() {
                     <div className="inline-flex rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
                       New
                     </div>
-                    <p className="mt-3 text-lg font-medium text-white">Degree Tracker</p>
+                    <p className="mt-3 text-lg font-medium text-white">
+                      Degree Tracker
+                    </p>
                     <p className="mt-2 text-sm leading-6 text-slate-300">
-                      Track overall progress, see how far through your degree you are, and
-                      stay motivated with the bigger picture.
+                      Track overall progress, see how far through your degree you
+                      are, and stay motivated with the bigger picture.
                     </p>
                     <p className="mt-4 text-sm font-medium text-blue-300 transition group-hover:text-blue-200">
                       Open degree tracker →
                     </p>
                   </div>
-                </Link>
-
-                <Link
-                  href="/login"
-                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 transition hover:border-blue-400 hover:bg-[#122145] sm:p-5"
-                >
-                  <p className="text-lg font-medium text-white">Log in</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    Access your personal account and keep your saved progress.
-                  </p>
                 </Link>
               </div>
             </div>
@@ -839,7 +922,11 @@ export default function HomePage() {
               </div>
 
               <div className="mt-6 space-y-4">
-                {stats.recent.length === 0 ? (
+                {loading ? (
+                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                    Loading recent tasks...
+                  </div>
+                ) : stats.recent.length === 0 ? (
                   <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
                     No tasks yet. Add your first task to get started.
                   </div>
@@ -852,8 +939,10 @@ export default function HomePage() {
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                           <p
-                            className={`text-base font-medium break-words ${
-                              task.completed ? "text-slate-500 line-through" : "text-white"
+                            className={`break-words text-base font-medium ${
+                              task.completed
+                                ? "text-slate-500 line-through"
+                                : "text-white"
                             }`}
                           >
                             {task.title}
@@ -887,7 +976,11 @@ export default function HomePage() {
               </div>
 
               <div className="mt-6 space-y-4">
-                {bestRecoveryAction ? (
+                {loading ? (
+                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                    Loading quick wins...
+                  </div>
+                ) : bestRecoveryAction ? (
                   <>
                     <Link
                       href={bestRecoveryAction.route}
@@ -927,7 +1020,8 @@ export default function HomePage() {
                   </>
                 ) : (
                   <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                    You’re in a strong position right now. No urgent quick wins needed.
+                    You’re in a strong position right now. No urgent quick wins
+                    needed.
                   </div>
                 )}
               </div>
