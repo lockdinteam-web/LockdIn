@@ -175,7 +175,8 @@ export default function HomePage() {
 
     const studyHours =
       Math.round(
-        (studyBlocks.reduce((sum, block) => sum + block.durationMinutes, 0) / 60) * 10
+        (studyBlocks.reduce((sum, block) => sum + block.durationMinutes, 0) / 60) *
+          10
       ) / 10;
 
     const plannerCompletionRate =
@@ -253,10 +254,10 @@ export default function HomePage() {
     stats.overdue > 0
       ? "Clear overdue work before anything else"
       : stats.highPriority > 0
-      ? "High-priority work needs your focus"
-      : stats.pending > 0
-      ? "Your edge comes from finishing, not adding more"
-      : "You’re in a strong position right now";
+        ? "High-priority work needs your focus"
+        : stats.pending > 0
+          ? "Your edge comes from finishing, not adding more"
+          : "You’re in a strong position right now";
 
   const coachMessage =
     stats.overdue > 0
@@ -264,14 +265,14 @@ export default function HomePage() {
           stats.overdue === 1 ? "" : "s"
         }. That is the main thing dragging your score up right now.`
       : stats.highPriority > 0
-      ? `You still have ${stats.highPriority} high-priority task${
-          stats.highPriority === 1 ? "" : "s"
-        } open. Finishing one of those will shift things fastest.`
-      : stats.pending > 0
-      ? `You have ${stats.pending} active task${
-          stats.pending === 1 ? "" : "s"
-        } in motion. Protect momentum by finishing what is already open.`
-      : "No current backlog. Best move now is staying ahead before pressure builds again.";
+        ? `You still have ${stats.highPriority} high-priority task${
+            stats.highPriority === 1 ? "" : "s"
+          } open. Finishing one of those will shift things fastest.`
+        : stats.pending > 0
+          ? `You have ${stats.pending} active task${
+              stats.pending === 1 ? "" : "s"
+            } in motion. Protect momentum by finishing what is already open.`
+          : "No current backlog. Best move now is staying ahead before pressure builds again.";
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#020817] text-white">
@@ -404,8 +405,8 @@ export default function HomePage() {
                           {stats.completionRate >= 80
                             ? "Strong"
                             : stats.completionRate >= 50
-                            ? "Building"
-                            : "Needs work"}
+                              ? "Building"
+                              : "Needs work"}
                         </p>
                       </div>
                     </div>
@@ -624,10 +625,10 @@ export default function HomePage() {
                     {stats.overdue > 0
                       ? "Open Tasks and complete the most overdue item first."
                       : stats.highPriority > 0
-                      ? "Finish your next high-priority task before switching context."
-                      : stats.pending > 0
-                      ? "Use Planner to assign focused time to your remaining workload."
-                      : "Use Planner to map out your next study block while you’re ahead."}
+                        ? "Finish your next high-priority task before switching context."
+                        : stats.pending > 0
+                          ? "Use Planner to assign focused time to your remaining workload."
+                          : "Use Planner to map out your next study block while you’re ahead."}
                   </p>
                 </div>
               </div>
@@ -771,7 +772,7 @@ export default function HomePage() {
             </div>
           </section>
 
-          <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr] xl:gap-6">
+          <section className="grid items-start gap-5 xl:grid-cols-[1.2fr_0.8fr] xl:gap-6">
             <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
               <div className="flex items-center justify-between gap-4">
                 <h3 className="text-xl font-semibold sm:text-2xl">Recent Tasks</h3>
@@ -824,32 +825,57 @@ export default function HomePage() {
             </div>
 
             <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
-              <h3 className="text-xl font-semibold sm:text-2xl">Why this sticks</h3>
+              <div className="flex items-center justify-between gap-4">
+                <h3 className="text-xl font-semibold sm:text-2xl">Quick Wins</h3>
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
+                  Fastest score drops
+                </span>
+              </div>
 
               <div className="mt-6 space-y-4">
-                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
-                  <p className="text-lg font-medium">Pressure becomes visible</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    You can instantly see when deadlines, workload, and missed study
-                    time are starting to pile up.
-                  </p>
-                </div>
+                {bestRecoveryAction ? (
+                  <>
+                    <Link
+                      href={bestRecoveryAction.route}
+                      className="block rounded-2xl border border-white/10 bg-[#101b38] p-5 transition hover:border-blue-400 hover:bg-[#122145]"
+                    >
+                      <p className="text-lg font-medium text-white">
+                        {bestRecoveryAction.label}
+                      </p>
+                      <p className="mt-2 text-sm text-blue-300">
+                        Reduce cooked score by {bestRecoveryAction.scoreDrop}
+                      </p>
+                    </Link>
 
-                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
-                  <p className="text-lg font-medium">Recovery feels real</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    The best recovery move gives users a clear action that actually
-                    lowers the score.
-                  </p>
-                </div>
+                    <Link
+                      href="/planner"
+                      className="block rounded-2xl border border-white/10 bg-[#101b38] p-5 transition hover:border-blue-400 hover:bg-[#122145]"
+                    >
+                      <p className="text-lg font-medium text-white">
+                        Complete your next study block
+                      </p>
+                      <p className="mt-2 text-sm text-emerald-300">
+                        Boost momentum and consistency
+                      </p>
+                    </Link>
 
-                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
-                  <p className="text-lg font-medium">It’s screenshot-worthy</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    The cooked score gives LockdIn a memorable hook people will want
-                    to show friends.
-                  </p>
-                </div>
+                    <Link
+                      href="/tasks"
+                      className="block rounded-2xl border border-white/10 bg-[#101b38] p-5 transition hover:border-blue-400 hover:bg-[#122145]"
+                    >
+                      <p className="text-lg font-medium text-white">
+                        Clear one urgent task
+                      </p>
+                      <p className="mt-2 text-sm text-amber-300">
+                        Remove deadline pressure fast
+                      </p>
+                    </Link>
+                  </>
+                ) : (
+                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                    You’re in a strong position right now. No urgent quick wins needed.
+                  </div>
+                )}
               </div>
             </div>
           </section>
