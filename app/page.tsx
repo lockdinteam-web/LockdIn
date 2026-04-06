@@ -332,6 +332,12 @@ export default function HomePage() {
                   >
                     Open degree tracker
                   </Link>
+                  <Link
+                    href="/login"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-center text-sm font-medium text-white transition hover:bg-white/10 sm:w-auto"
+                  >
+                    Log in
+                  </Link>
                 </div>
               </div>
 
@@ -639,7 +645,7 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-4 md:gap-4">
+              <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-5 md:gap-4">
                 <Link
                   href="/tasks"
                   className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
@@ -663,6 +669,12 @@ export default function HomePage() {
                   className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-4 text-sm text-blue-200 transition hover:border-blue-400 hover:bg-blue-500/20"
                 >
                   Open degree tracker
+                </Link>
+                <Link
+                  href="/login"
+                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
+                >
+                  Log in
                 </Link>
               </div>
             </div>
@@ -799,6 +811,16 @@ export default function HomePage() {
                       Open degree tracker →
                     </p>
                   </div>
+                </Link>
+
+                <Link
+                  href="/login"
+                  className="rounded-2xl border border-white/10 bg-[#101b38] p-4 transition hover:border-blue-400 hover:bg-[#122145] sm:p-5"
+                >
+                  <p className="text-lg font-medium text-white">Log in</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    Access your personal account and keep your saved progress.
+                  </p>
                 </Link>
               </div>
             </div>
