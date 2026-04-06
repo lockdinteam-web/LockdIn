@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
+import { TasksProvider } from "@/components/TasksProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,8 +15,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <TasksProvider>
+          {children}
+        </TasksProvider>
+        <Analytics />
+      </body>
     </html>
   );
 }
-

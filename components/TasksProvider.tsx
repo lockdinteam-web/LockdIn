@@ -2,7 +2,18 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { getTasksForUser, type Task } from "@/lib/tasks";
+
+type Priority = "High" | "Medium" | "Low";
+
+type Task = {
+  id: string;
+  title: string;
+  module: string;
+  due_date: string;
+  priority: Priority;
+  completed: boolean;
+  user_id: string;
+};
 
 type TasksContextType = {
   tasks: Task[];
@@ -21,21 +32,40 @@ export function TasksProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refreshTasks = async () => {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-    if (!session?.user) {
+      if (userError || !user) {
+        setTasks([]);
+        setLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Error fetching tasks:", error.message);
+        setTasks([]);
+        setLoading(false);
+        return;
+      }
+
+      setTasks((data as Task[]) ?? []);
+      setLoading(false);
+    } catch (error) {
+      console.error("Unexpected provider error:", error);
       setTasks([]);
       setLoading(false);
-      return;
     }
-
-    const userTasks = await getTasksForUser(session.user.id);
-    setTasks(userTasks);
-    setLoading(false);
   };
 
   useEffect(() => {
