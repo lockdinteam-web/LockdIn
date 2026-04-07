@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTasks } from "@/components/TasksProvider";
 import { supabase } from "@/lib/supabase";
+import { upsertTodayLeaderboardSnapshot } from "@/lib/leaderboard";
 import {
   calculateCookedScore,
   getBestRecoveryAction,
@@ -51,20 +52,25 @@ type FriendConnection = {
   friend_id: string;
 };
 
+type LeaderboardSnapshotRow = {
+  user_id: string;
+  snapshot_date: string;
+  cooked_score: number;
+  pending_tasks: number;
+  completed_tasks: number;
+  completion_rate: number;
+};
+
+type ActivityDayRow = {
+  user_id: string;
+  activity_date: string;
+};
+
 type LeaderboardMode =
   | "mostCooked"
   | "biggestComeback"
   | "mostLockedIn"
   | "mostActive";
-
-type LeaderboardSnapshot = Record<
-  string,
-  {
-    cookedScore: number;
-    pendingTasks: number;
-    lastSeenAt: string;
-  }
->;
 
 type LeaderboardEntry = {
   id: string;
@@ -76,16 +82,16 @@ type LeaderboardEntry = {
   pendingTasks: number;
   completedTasks: number;
   completionRate: number;
+  weeklyCookedChange: number;
+  weeklyPendingChange: number;
+  streak: number;
   rank: number;
   isYou: boolean;
-  changeSinceLastCheck: number;
-  pendingChangeSinceLastCheck: number;
   momentumLabel: string;
   roastLabel: string;
 };
 
 const STUDY_PLAN_STORAGE_KEY = "lockdin_study_plan";
-const LEADERBOARD_SNAPSHOT_KEY = "lockdin_leaderboard_snapshot_v1";
 
 function getDaysUntil(dateString: string) {
   const today = new Date();
@@ -108,13 +114,27 @@ function safeParseArray<T>(value: string | null): T[] {
   }
 }
 
-function safeParseObject<T>(value: string | null, fallback: T): T {
-  if (!value) return fallback;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
+function getDateDaysAgo(daysAgo: number) {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return d.toISOString().slice(0, 10);
+}
+
+function calculateStreak(activityDates: string[]) {
+  if (activityDates.length === 0) return 0;
+
+  const set = new Set(activityDates);
+  let streak = 0;
+  const cursor = new Date();
+
+  while (true) {
+    const key = cursor.toISOString().slice(0, 10);
+    if (!set.has(key)) break;
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
   }
+
+  return streak;
 }
 
 function getPriorityBadge(priority: Priority) {
@@ -218,45 +238,11 @@ function getHeroSubtitle(score: number) {
   return "You’re looking suspiciously organised.";
 }
 
-function mapDatabaseTask(task: DatabaseTask): HomeTask {
-  return {
-    id: task.id,
-    title: task.title,
-    module: task.module,
-    dueDate: task.due_date,
-    priority: task.priority,
-    completed: task.completed,
-  };
-}
-
 function getLeaderboardAccent(score: number) {
   if (score >= 85) return "border-rose-400/30 bg-rose-500/10";
   if (score >= 65) return "border-orange-400/30 bg-orange-500/10";
   if (score >= 40) return "border-amber-400/30 bg-amber-500/10";
   return "border-emerald-400/30 bg-emerald-500/10";
-}
-
-function getDeltaPill(delta: number) {
-  if (delta < 0) {
-    return {
-      text: `${delta}`,
-      className:
-        "border-emerald-400/20 bg-emerald-500/10 text-emerald-300",
-      label: "Recovered",
-    };
-  }
-  if (delta > 0) {
-    return {
-      text: `+${delta}`,
-      className: "border-rose-400/20 bg-rose-500/10 text-rose-300",
-      label: "More cooked",
-    };
-  }
-  return {
-    text: "0",
-    className: "border-white/10 bg-white/5 text-slate-300",
-    label: "No change",
-  };
 }
 
 async function copyText(text: string) {
@@ -292,11 +278,6 @@ export default function HomePage() {
   async function loadLeaderboard(userId: string) {
     try {
       setLeaderboardLoading(true);
-
-      const previousSnapshot = safeParseObject<LeaderboardSnapshot>(
-        localStorage.getItem(LEADERBOARD_SNAPSHOT_KEY),
-        {}
-      );
 
       const { data: connectionRows, error: connectionError } = await supabase
         .from("friend_connections")
@@ -338,13 +319,60 @@ export default function HomePage() {
         return;
       }
 
-      const tasksByUser = new Map<string, HomeTask[]>();
+      const { data: snapshotRows, error: snapshotError } = await supabase
+        .from("leaderboard_snapshots")
+        .select(
+          "user_id, snapshot_date, cooked_score, pending_tasks, completed_tasks, completion_rate"
+        )
+        .in("user_id", allIds)
+        .gte("snapshot_date", getDateDaysAgo(7));
 
+      if (snapshotError) {
+        console.error("Error loading leaderboard snapshots:", snapshotError.message);
+        setLeaderboard([]);
+        return;
+      }
+
+      const { data: activityRows, error: activityError } = await supabase
+        .from("user_activity_days")
+        .select("user_id, activity_date")
+        .in("user_id", allIds)
+        .gte("activity_date", getDateDaysAgo(30));
+
+      if (activityError) {
+        console.error("Error loading activity days:", activityError.message);
+        setLeaderboard([]);
+        return;
+      }
+
+      const tasksByUser = new Map<string, HomeTask[]>();
       ((taskRows as DatabaseTask[] | null) ?? []).forEach((task) => {
-        const mapped = mapDatabaseTask(task);
+        const mapped: HomeTask = {
+          id: task.id,
+          title: task.title,
+          module: task.module,
+          dueDate: task.due_date,
+          priority: task.priority,
+          completed: task.completed,
+        };
+
         const existing = tasksByUser.get(task.user_id) ?? [];
         existing.push(mapped);
         tasksByUser.set(task.user_id, existing);
+      });
+
+      const snapshotsByUser = new Map<string, LeaderboardSnapshotRow[]>();
+      ((snapshotRows as LeaderboardSnapshotRow[] | null) ?? []).forEach((row) => {
+        const existing = snapshotsByUser.get(row.user_id) ?? [];
+        existing.push(row);
+        snapshotsByUser.set(row.user_id, existing);
+      });
+
+      const activityByUser = new Map<string, string[]>();
+      ((activityRows as ActivityDayRow[] | null) ?? []).forEach((row) => {
+        const existing = activityByUser.get(row.user_id) ?? [];
+        existing.push(row.activity_date);
+        activityByUser.set(row.user_id, existing);
       });
 
       const entries: LeaderboardEntry[] = (
@@ -359,14 +387,21 @@ export default function HomePage() {
             ? Math.round((completedTasks / personTasks.length) * 100)
             : 0;
 
-        const oldSnapshot = previousSnapshot[person.id];
-        const changeSinceLastCheck = oldSnapshot
-          ? cookedResult.score - oldSnapshot.cookedScore
+        const personSnapshots = (snapshotsByUser.get(person.id) ?? []).sort((a, b) =>
+          a.snapshot_date.localeCompare(b.snapshot_date)
+        );
+
+        const oldestSnapshot = personSnapshots[0] ?? null;
+
+        const weeklyCookedChange = oldestSnapshot
+          ? cookedResult.score - oldestSnapshot.cooked_score
           : 0;
 
-        const pendingChangeSinceLastCheck = oldSnapshot
-          ? pendingTasks - oldSnapshot.pendingTasks
+        const weeklyPendingChange = oldestSnapshot
+          ? pendingTasks - oldestSnapshot.pending_tasks
           : 0;
+
+        const streak = calculateStreak(activityByUser.get(person.id) ?? []);
 
         return {
           id: person.id,
@@ -378,25 +413,16 @@ export default function HomePage() {
           pendingTasks,
           completedTasks,
           completionRate,
+          weeklyCookedChange,
+          weeklyPendingChange,
+          streak,
           rank: 0,
           isYou: person.id === userId,
-          changeSinceLastCheck,
-          pendingChangeSinceLastCheck,
           momentumLabel: getMomentumLabel(completionRate, pendingTasks),
           roastLabel: getRoastLabel(cookedResult.score),
         };
       });
 
-      const newSnapshot: LeaderboardSnapshot = {};
-      entries.forEach((entry) => {
-        newSnapshot[entry.id] = {
-          cookedScore: entry.cookedScore,
-          pendingTasks: entry.pendingTasks,
-          lastSeenAt: new Date().toISOString(),
-        };
-      });
-
-      localStorage.setItem(LEADERBOARD_SNAPSHOT_KEY, JSON.stringify(newSnapshot));
       setLeaderboard(entries);
     } catch (error) {
       console.error("Unexpected leaderboard error:", error);
@@ -525,10 +551,9 @@ export default function HomePage() {
   }
 
   async function handleShareLeaderboard(entries: LeaderboardEntry[]) {
-    const lines = entries.slice(0, 5).map(
-      (entry, index) =>
-        `${index + 1}. @${entry.username} — ${entry.cookedScore}/100`
-    );
+    const lines = entries
+      .slice(0, 5)
+      .map((entry, index) => `${index + 1}. @${entry.username} — ${entry.cookedScore}/100`);
 
     const text = `🔥 LockdIn Cooked Leaderboard\n${lines.join(
       "\n"
@@ -635,6 +660,25 @@ export default function HomePage() {
     }));
   }, [providerTasks]);
 
+  useEffect(() => {
+    async function syncMySnapshot() {
+      if (!currentUserId || loading) return;
+
+      const leaderboardTasks = tasks.map((task) => ({
+        id: task.id,
+        title: task.title,
+        module: task.module,
+        dueDate: task.dueDate,
+        priority: task.priority,
+        completed: task.completed,
+      }));
+
+      await upsertTodayLeaderboardSnapshot(currentUserId, leaderboardTasks);
+    }
+
+    syncMySnapshot();
+  }, [currentUserId, tasks, loading]);
+
   const stats = useMemo(() => {
     const completed = tasks.filter((task) => task.completed).length;
     const pending = tasks.filter((task) => !task.completed).length;
@@ -661,8 +705,7 @@ export default function HomePage() {
     const upcoming = [...tasks]
       .filter((task) => !task.completed)
       .sort(
-        (a, b) =>
-          new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+        (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
       );
 
     const nextTask = upcoming[0] ?? null;
@@ -670,12 +713,8 @@ export default function HomePage() {
     const completionRate =
       tasks.length > 0 ? Math.round((completed / tasks.length) * 100) : 0;
 
-    const completedStudyBlocks = studyBlocks.filter(
-      (block) => block.completed
-    ).length;
-    const openStudyBlocks = studyBlocks.filter(
-      (block) => !block.completed
-    ).length;
+    const completedStudyBlocks = studyBlocks.filter((block) => block.completed).length;
+    const openStudyBlocks = studyBlocks.filter((block) => !block.completed).length;
 
     const studyHours =
       Math.round(
@@ -723,27 +762,11 @@ export default function HomePage() {
         const bDays = getDaysUntil(b.dueDate);
 
         const aScore =
-          (aDays < 0
-            ? 100
-            : aDays === 0
-            ? 80
-            : aDays === 1
-            ? 65
-            : aDays <= 3
-            ? 45
-            : 20) +
+          (aDays < 0 ? 100 : aDays === 0 ? 80 : aDays === 1 ? 65 : aDays <= 3 ? 45 : 20) +
           (a.priority === "High" ? 25 : a.priority === "Medium" ? 15 : 8);
 
         const bScore =
-          (bDays < 0
-            ? 100
-            : bDays === 0
-            ? 80
-            : bDays === 1
-            ? 65
-            : bDays <= 3
-            ? 45
-            : 20) +
+          (bDays < 0 ? 100 : bDays === 0 ? 80 : bDays === 1 ? 65 : bDays <= 3 ? 45 : 20) +
           (b.priority === "High" ? 25 : b.priority === "Medium" ? 15 : 8);
 
         return bScore - aScore;
@@ -758,27 +781,11 @@ export default function HomePage() {
         const bDays = getDaysUntil(b.dueDate);
 
         const aValue =
-          (aDays < 0
-            ? 100
-            : aDays === 0
-            ? 90
-            : aDays === 1
-            ? 75
-            : aDays <= 3
-            ? 55
-            : 20) +
+          (aDays < 0 ? 100 : aDays === 0 ? 90 : aDays === 1 ? 75 : aDays <= 3 ? 55 : 20) +
           (a.priority === "High" ? 30 : a.priority === "Medium" ? 18 : 8);
 
         const bValue =
-          (bDays < 0
-            ? 100
-            : bDays === 0
-            ? 90
-            : bDays === 1
-            ? 75
-            : bDays <= 3
-            ? 55
-            : 20) +
+          (bDays < 0 ? 100 : bDays === 0 ? 90 : bDays === 1 ? 75 : bDays <= 3 ? 55 : 20) +
           (b.priority === "High" ? 30 : b.priority === "Medium" ? 18 : 8);
 
         return bValue - aValue;
@@ -825,8 +832,8 @@ export default function HomePage() {
     if (leaderboardMode === "biggestComeback") {
       return cloned
         .sort((a, b) => {
-          if (a.changeSinceLastCheck !== b.changeSinceLastCheck) {
-            return a.changeSinceLastCheck - b.changeSinceLastCheck;
+          if (a.weeklyCookedChange !== b.weeklyCookedChange) {
+            return a.weeklyCookedChange - b.weeklyCookedChange;
           }
           return a.cookedScore - b.cookedScore;
         })
@@ -837,6 +844,7 @@ export default function HomePage() {
       return cloned
         .sort((a, b) => {
           if (a.cookedScore !== b.cookedScore) return a.cookedScore - b.cookedScore;
+          if (b.streak !== a.streak) return b.streak - a.streak;
           return b.completionRate - a.completionRate;
         })
         .map((entry, index) => ({ ...entry, rank: index + 1 }));
@@ -859,10 +867,10 @@ export default function HomePage() {
       return `@${top.username} is currently the most cooked.`;
     }
     if (leaderboardMode === "biggestComeback") {
-      if (top.changeSinceLastCheck < 0) {
-        return `@${top.username} has made the best comeback since the last check.`;
+      if (top.weeklyCookedChange < 0) {
+        return `@${top.username} has made the best comeback this week.`;
       }
-      return `Nobody has recovered yet. Chaos remains unchanged.`;
+      return "Nobody has recovered this week yet.";
     }
     if (leaderboardMode === "mostLockedIn") {
       return `@${top.username} is currently the least cooked.`;
@@ -1614,91 +1622,97 @@ export default function HomePage() {
                         start the chaos.
                       </div>
                     ) : (
-                      sortedLeaderboard.map((entry) => {
-                        const delta = getDeltaPill(entry.changeSinceLastCheck);
+                      sortedLeaderboard.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className={`rounded-2xl border p-4 sm:p-5 ${getLeaderboardAccent(
+                            entry.cookedScore
+                          )} ${entry.isYou ? "ring-1 ring-blue-400/30" : ""}`}
+                        >
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                  #{entry.rank}
+                                </span>
 
-                        return (
-                          <div
-                            key={entry.id}
-                            className={`rounded-2xl border p-4 sm:p-5 ${getLeaderboardAccent(
-                              entry.cookedScore
-                            )} ${entry.isYou ? "ring-1 ring-blue-400/30" : ""}`}
-                          >
-                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                    #{entry.rank}
-                                  </span>
-
-                                  <p className="break-words text-base font-semibold text-white">
-                                    @{entry.username}
-                                  </p>
-
-                                  {entry.isYou ? (
-                                    <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs text-blue-200">
-                                      You
-                                    </span>
-                                  ) : null}
-
-                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                    {entry.roastLabel}
-                                  </span>
-                                </div>
-
-                                <p className="mt-2 text-sm text-slate-400">
-                                  {entry.course} • {entry.university}
+                                <p className="break-words text-base font-semibold text-white">
+                                  @{entry.username}
                                 </p>
 
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                    {entry.pendingTasks} active task
-                                    {entry.pendingTasks === 1 ? "" : "s"}
+                                {entry.isYou ? (
+                                  <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs text-blue-200">
+                                    You
                                   </span>
-                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                    {entry.completionRate}% completion
-                                  </span>
-                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                    {entry.momentumLabel}
-                                  </span>
-                                  <span
-                                    className={`rounded-full border px-3 py-1 text-xs ${delta.className}`}
-                                  >
-                                    {delta.label}: {delta.text}
-                                  </span>
-                                </div>
+                                ) : null}
+
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                  {entry.roastLabel}
+                                </span>
                               </div>
 
-                              <div className="text-left sm:text-right">
-                                <p
-                                  className={`text-3xl font-semibold sm:text-4xl ${getCookedTextColor(
-                                    entry.cookedScore
-                                  )}`}
+                              <p className="mt-2 text-sm text-slate-400">
+                                {entry.course} • {entry.university}
+                              </p>
+
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                  {entry.pendingTasks} active task
+                                  {entry.pendingTasks === 1 ? "" : "s"}
+                                </span>
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                  {entry.completionRate}% completion
+                                </span>
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                  {entry.streak} day streak
+                                </span>
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                  {entry.momentumLabel}
+                                </span>
+                                <span
+                                  className={`rounded-full border px-3 py-1 text-xs ${
+                                    entry.weeklyCookedChange < 0
+                                      ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
+                                      : entry.weeklyCookedChange > 0
+                                      ? "border-rose-400/20 bg-rose-500/10 text-rose-300"
+                                      : "border-white/10 bg-white/5 text-slate-300"
+                                  }`}
                                 >
-                                  {entry.cookedScore}
-                                </p>
-                                <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
-                                  cooked score
-                                </p>
-                                <p className="mt-2 text-sm text-slate-300">
-                                  {entry.status}
-                                </p>
+                                  7d cooked: {entry.weeklyCookedChange > 0 ? "+" : ""}
+                                  {entry.weeklyCookedChange}
+                                </span>
                               </div>
                             </div>
 
-                            <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-black/20">
-                              <div
-                                className={`h-full rounded-full ${getCookedBarClass(
+                            <div className="text-left sm:text-right">
+                              <p
+                                className={`text-3xl font-semibold sm:text-4xl ${getCookedTextColor(
                                   entry.cookedScore
                                 )}`}
-                                style={{
-                                  width: `${Math.max(6, entry.cookedScore)}%`,
-                                }}
-                              />
+                              >
+                                {entry.cookedScore}
+                              </p>
+                              <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
+                                cooked score
+                              </p>
+                              <p className="mt-2 text-sm text-slate-300">
+                                {entry.status}
+                              </p>
                             </div>
                           </div>
-                        );
-                      })
+
+                          <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-black/20">
+                            <div
+                              className={`h-full rounded-full ${getCookedBarClass(
+                                entry.cookedScore
+                              )}`}
+                              style={{
+                                width: `${Math.max(6, entry.cookedScore)}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))
                     )}
                   </div>
                 </>
@@ -1841,10 +1855,10 @@ export default function HomePage() {
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
-                  <p className="text-sm text-slate-400">Movement tracking</p>
+                  <p className="text-sm text-slate-400">What is real now</p>
                   <p className="mt-2 text-sm leading-7 text-slate-200">
-                    Comeback movement is tracked from the last time this browser
-                    loaded the leaderboard.
+                    Weekly changes come from real Supabase snapshots. Streaks come
+                    from real recorded activity days.
                   </p>
                 </div>
 

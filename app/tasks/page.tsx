@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import {
+  recordActivityDay,
+  upsertTodayLeaderboardSnapshot,
+} from "@/lib/leaderboard";
+import {
   CheckCircle2,
   Circle,
   ClipboardList,
@@ -83,7 +87,10 @@ export default function TasksPage() {
           completed: task.completed,
         }));
 
-        if (mounted) setTasks(mappedTasks);
+        if (mounted) {
+          setTasks(mappedTasks);
+          await upsertTodayLeaderboardSnapshot(user.id, mappedTasks);
+        }
       } catch (error) {
         console.error("Unexpected error loading tasks:", error);
         if (mounted) setTasks([]);
@@ -143,7 +150,11 @@ export default function TasksPage() {
       completed: data.completed,
     };
 
-    setTasks((prev) => [newTask, ...prev]);
+    const updatedTasks = [newTask, ...tasks];
+    setTasks(updatedTasks);
+
+    await upsertTodayLeaderboardSnapshot(user.id, updatedTasks);
+
     setTitle("");
     setModule("");
     setDueDate("");
@@ -153,6 +164,16 @@ export default function TasksPage() {
   async function toggleTask(id: string) {
     const currentTask = tasks.find((task) => task.id === id);
     if (!currentTask) return;
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      window.location.href = "/login";
+      return;
+    }
 
     const newCompletedValue = !currentTask.completed;
 
@@ -166,14 +187,30 @@ export default function TasksPage() {
       return;
     }
 
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === id ? { ...task, completed: newCompletedValue } : task
-      )
+    const updatedTasks = tasks.map((task) =>
+      task.id === id ? { ...task, completed: newCompletedValue } : task
     );
+
+    setTasks(updatedTasks);
+
+    if (newCompletedValue) {
+      await recordActivityDay(user.id);
+    }
+
+    await upsertTodayLeaderboardSnapshot(user.id, updatedTasks);
   }
 
   async function deleteTask(id: string) {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      window.location.href = "/login";
+      return;
+    }
+
     const { error } = await supabase.from("tasks").delete().eq("id", id);
 
     if (error) {
@@ -181,7 +218,10 @@ export default function TasksPage() {
       return;
     }
 
-    setTasks((prev) => prev.filter((task) => task.id !== id));
+    const updatedTasks = tasks.filter((task) => task.id !== id);
+    setTasks(updatedTasks);
+
+    await upsertTodayLeaderboardSnapshot(user.id, updatedTasks);
   }
 
   async function handleLogout() {
