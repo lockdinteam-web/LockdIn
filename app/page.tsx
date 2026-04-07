@@ -13,35 +13,19 @@ import {
   type StudyBlock,
 } from "@/lib/calculateCookedScore";
 import {
-  createBossesFromTasks,
-  generateRecoveryMission,
-  getInitialGamificationState,
-  getLevelProgress,
-  loadGamificationState,
-  saveGamificationState,
-  updateLeagueForWeek,
-  type BossBattle,
-  type GamificationState,
-  type RecoveryMission,
-  type LeagueTier,
-} from "@/lib/gamification";
-import {
-  Trophy,
   Flame,
   Sparkles,
   ClipboardList,
   CalendarDays,
-  BarChart3,
   ChevronRight,
   Crown,
   Target,
   Zap,
   Shield,
-  TrendingUp,
+  Trophy,
   Medal,
-  Swords,
-  Skull,
   Share2,
+  TrendingUp,
 } from "lucide-react";
 
 type Priority = "High" | "Medium" | "Low";
@@ -51,16 +35,6 @@ type HomeTask = {
   title: string;
   module: string;
   dueDate: string;
-  priority: Priority;
-  completed: boolean;
-};
-
-type DatabaseTask = {
-  id: string;
-  user_id: string;
-  title: string;
-  module: string;
-  due_date: string;
   priority: Priority;
   completed: boolean;
 };
@@ -124,12 +98,12 @@ type LeaderboardEntry = {
   completedTasks: number;
   completionRate: number;
   weeklyCookedChange: number;
-  weeklyPendingChange: number;
   streak: number;
   rank: number;
   isYou: boolean;
   momentumLabel: string;
   roastLabel: string;
+  lastUpdatedLabel: string;
 };
 
 type NormalizedStudyBlock = StudyBlock & {
@@ -269,6 +243,14 @@ function getCookedZone(score: number) {
   return "Deep Fried";
 }
 
+function getCookedStatusFromScore(score: number) {
+  if (score <= 20) return "Locked in and under control";
+  if (score <= 40) return "Stable, but don’t coast";
+  if (score <= 60) return "Pressure is building";
+  if (score <= 80) return "You need to lock in";
+  return "Academic emergency";
+}
+
 function getRoastLabel(score: number) {
   if (score <= 15) return "Academic Weapon";
   if (score <= 30) return "Suspiciously Organised";
@@ -347,45 +329,6 @@ function getXpNeededForNextLevel() {
   return 100;
 }
 
-function getTierIconLabel(tier: LeagueTier) {
-  if (tier === "Locked In") return "Locked In";
-  if (tier === "Elite") return "Elite";
-  if (tier === "Gold") return "Gold";
-  if (tier === "Silver") return "Silver";
-  return "Bronze";
-}
-
-function getTierStyles(tier: LeagueTier) {
-  if (tier === "Locked In") {
-    return {
-      badge: "border-yellow-400/20 bg-yellow-500/10 text-yellow-300",
-      card: "border-yellow-400/20 bg-yellow-500/5",
-    };
-  }
-  if (tier === "Elite") {
-    return {
-      badge: "border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-300",
-      card: "border-fuchsia-400/20 bg-fuchsia-500/5",
-    };
-  }
-  if (tier === "Gold") {
-    return {
-      badge: "border-amber-400/20 bg-amber-500/10 text-amber-300",
-      card: "border-amber-400/20 bg-amber-500/5",
-    };
-  }
-  if (tier === "Silver") {
-    return {
-      badge: "border-slate-300/20 bg-slate-400/10 text-slate-200",
-      card: "border-slate-300/20 bg-slate-400/5",
-    };
-  }
-  return {
-    badge: "border-orange-400/20 bg-orange-500/10 text-orange-300",
-    card: "border-orange-400/20 bg-orange-500/5",
-  };
-}
-
 function getDisplayName(entry: {
   displayName?: string | null;
   username: string;
@@ -403,6 +346,15 @@ function getInitials(value: string) {
   }
 
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+}
+
+function getRelativeSyncLabel(date: string | null) {
+  if (!date) return "No sync yet";
+
+  const today = getTodayDate();
+  if (date === today) return "Updated today";
+  if (date === getDateDaysAgo(1)) return "Updated yesterday";
+  return `Updated ${date}`;
 }
 
 async function copyText(text: string) {
@@ -533,11 +485,19 @@ export default function HomePage() {
   const [friendSuccess, setFriendSuccess] = useState("");
 
   const [shareMessage, setShareMessage] = useState("");
-  const [gameState, setGameState] = useState<GamificationState>(
-    getInitialGamificationState()
-  );
 
-  async function loadLeaderboard(userId: string) {
+  const tasks = useMemo<HomeTask[]>(() => {
+    return ((providerTasks ?? []) as Array<Record<string, unknown>>).map((task) => ({
+      id: String(task.id ?? ""),
+      title: String(task.title ?? ""),
+      module: String(task.module ?? ""),
+      dueDate: String(task.dueDate ?? task.due_date ?? ""),
+      priority: (task.priority as Priority) ?? "Low",
+      completed: Boolean(task.completed),
+    }));
+  }, [providerTasks]);
+
+  async function loadLeaderboard(userId: string, liveTasks: HomeTask[] = tasks) {
     try {
       setLeaderboardLoading(true);
 
@@ -571,21 +531,7 @@ export default function HomePage() {
         .in("id", allIds);
 
       if (profileError) {
-        console.error(
-          "Error loading leaderboard profiles:",
-          profileError.message
-        );
-        setLeaderboard([]);
-        return;
-      }
-
-      const { data: taskRows, error: taskError } = await supabase
-        .from("tasks")
-        .select("id, user_id, title, module, due_date, priority, completed")
-        .in("user_id", allIds);
-
-      if (taskError) {
-        console.error("Error loading leaderboard tasks:", taskError.message);
+        console.error("Error loading leaderboard profiles:", profileError.message);
         setLeaderboard([]);
         return;
       }
@@ -596,7 +542,7 @@ export default function HomePage() {
           "user_id, snapshot_date, cooked_score, pending_tasks, completed_tasks, completion_rate"
         )
         .in("user_id", allIds)
-        .gte("snapshot_date", getDateDaysAgo(7));
+        .gte("snapshot_date", getDateDaysAgo(14));
 
       if (snapshotError) {
         console.error(
@@ -619,22 +565,6 @@ export default function HomePage() {
         return;
       }
 
-      const tasksByUser = new Map<string, HomeTask[]>();
-      ((taskRows as DatabaseTask[] | null) ?? []).forEach((task) => {
-        const mapped: HomeTask = {
-          id: task.id,
-          title: task.title,
-          module: task.module,
-          dueDate: task.due_date,
-          priority: task.priority,
-          completed: task.completed,
-        };
-
-        const existing = tasksByUser.get(task.user_id) ?? [];
-        existing.push(mapped);
-        tasksByUser.set(task.user_id, existing);
-      });
-
       const snapshotsByUser = new Map<string, LeaderboardSnapshotRow[]>();
       ((snapshotRows as LeaderboardSnapshotRow[] | null) ?? []).forEach((row) => {
         const existing = snapshotsByUser.get(row.user_id) ?? [];
@@ -649,30 +579,48 @@ export default function HomePage() {
         activityByUser.set(row.user_id, existing);
       });
 
+      const myCookedResult = calculateCookedScore(liveTasks, []);
+      const myPendingTasks = liveTasks.filter((task) => !task.completed).length;
+      const myCompletedTasks = liveTasks.filter((task) => task.completed).length;
+      const myCompletionRate =
+        liveTasks.length > 0
+          ? Math.round((myCompletedTasks / liveTasks.length) * 100)
+          : 0;
+
       const entries: LeaderboardEntry[] = (
         (profileRows as LeaderboardProfile[] | null) ?? []
       ).map((person) => {
-        const personTasks = tasksByUser.get(person.id) ?? [];
-        const cookedResult = calculateCookedScore(personTasks, []);
-        const pendingTasks = personTasks.filter((task) => !task.completed).length;
-        const completedTasks = personTasks.filter((task) => task.completed).length;
-        const completionRate =
-          personTasks.length > 0
-            ? Math.round((completedTasks / personTasks.length) * 100)
-            : 0;
-
         const personSnapshots = (snapshotsByUser.get(person.id) ?? []).sort((a, b) =>
           a.snapshot_date.localeCompare(b.snapshot_date)
         );
 
+        const latestSnapshot =
+          personSnapshots.length > 0
+            ? personSnapshots[personSnapshots.length - 1]
+            : null;
+
         const oldestSnapshot = personSnapshots[0] ?? null;
 
-        const weeklyCookedChange = oldestSnapshot
-          ? cookedResult.score - oldestSnapshot.cooked_score
-          : 0;
+        const isYou = person.id === userId;
 
-        const weeklyPendingChange = oldestSnapshot
-          ? pendingTasks - oldestSnapshot.pending_tasks
+        const cookedScore = isYou
+          ? myCookedResult.score
+          : latestSnapshot?.cooked_score ?? 0;
+
+        const pendingTasks = isYou
+          ? myPendingTasks
+          : latestSnapshot?.pending_tasks ?? 0;
+
+        const completedTasks = isYou
+          ? myCompletedTasks
+          : latestSnapshot?.completed_tasks ?? 0;
+
+        const completionRate = isYou
+          ? myCompletionRate
+          : latestSnapshot?.completion_rate ?? 0;
+
+        const weeklyCookedChange = oldestSnapshot
+          ? cookedScore - oldestSnapshot.cooked_score
           : 0;
 
         const streak = calculateStreak(activityByUser.get(person.id) ?? []);
@@ -684,18 +632,20 @@ export default function HomePage() {
           course: person.course,
           avatarUrl: person.avatar_url ?? null,
           displayName: person.display_name ?? null,
-          cookedScore: cookedResult.score,
-          status: cookedResult.status,
+          cookedScore,
+          status: getCookedStatusFromScore(cookedScore),
           pendingTasks,
           completedTasks,
           completionRate,
           weeklyCookedChange,
-          weeklyPendingChange,
           streak,
           rank: 0,
-          isYou: person.id === userId,
+          isYou,
           momentumLabel: getMomentumLabel(completionRate, pendingTasks),
-          roastLabel: getRoastLabel(cookedResult.score),
+          roastLabel: getRoastLabel(cookedScore),
+          lastUpdatedLabel: isYou
+            ? "Live now"
+            : getRelativeSyncLabel(latestSnapshot?.snapshot_date ?? null),
         };
       });
 
@@ -786,7 +736,7 @@ export default function HomePage() {
 
       setFriendSuccess(`@${foundUser.username} added to your leaderboard.`);
       setFriendUsername("");
-      await loadLeaderboard(currentUserId);
+      await loadLeaderboard(currentUserId, tasks);
     } catch (error) {
       console.error("Unexpected add friend error:", error);
       setFriendError("Something went wrong while adding that friend.");
@@ -835,7 +785,9 @@ export default function HomePage() {
   async function handleShareLeaderboard(entries: LeaderboardEntry[]) {
     const lines = entries
       .slice(0, 5)
-      .map((entry, index) => `${index + 1}. @${entry.username} — ${entry.cookedScore}/100`);
+      .map(
+        (entry, index) => `${index + 1}. @${entry.username} — ${entry.cookedScore}/100`
+      );
 
     const text = `🔥 LockdIn Cooked Leaderboard\n${lines.join(
       "\n"
@@ -868,9 +820,6 @@ export default function HomePage() {
     );
 
     setStudyBlocks(normalizeStudyBlocks(rawStudyPlan));
-
-    const storedGame = loadGamificationState();
-    setGameState(storedGame);
 
     let mounted = true;
 
@@ -923,7 +872,7 @@ export default function HomePage() {
       if (!mounted) return;
 
       setProfile(syncedProfile);
-      await loadLeaderboard(user.id);
+      await loadLeaderboard(user.id, tasks);
     }
 
     void checkAuthAndProfile();
@@ -968,34 +917,9 @@ export default function HomePage() {
   }, [router]);
 
   useEffect(() => {
-    saveGamificationState(gameState);
-  }, [gameState]);
-
-  const tasks = useMemo<HomeTask[]>(() => {
-    return ((providerTasks ?? []) as Array<Record<string, unknown>>).map((task) => ({
-      id: String(task.id ?? ""),
-      title: String(task.title ?? ""),
-      module: String(task.module ?? ""),
-      dueDate: String(task.dueDate ?? task.due_date ?? ""),
-      priority: (task.priority as Priority) ?? "Low",
-      completed: Boolean(task.completed),
-    }));
-  }, [providerTasks]);
-
-  useEffect(() => {
     async function syncMySnapshot() {
       if (!currentUserId || loadingTasks) return;
-
-      const leaderboardTasks = tasks.map((task) => ({
-        id: task.id,
-        title: task.title,
-        module: task.module,
-        dueDate: task.dueDate,
-        priority: task.priority,
-        completed: task.completed,
-      }));
-
-      await upsertTodayLeaderboardSnapshotClient(currentUserId, leaderboardTasks);
+      await upsertTodayLeaderboardSnapshotClient(currentUserId, tasks);
     }
 
     void syncMySnapshot();
@@ -1003,7 +927,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!currentUserId || loadingTasks) return;
-    void loadLeaderboard(currentUserId);
+    void loadLeaderboard(currentUserId, tasks);
   }, [currentUserId, tasks, loadingTasks]);
 
   const stats = useMemo(() => {
@@ -1046,7 +970,8 @@ export default function HomePage() {
     const studyHours =
       Math.round(
         (studyBlocks.reduce(
-          (sum, block) => sum + Number(block.duration_minutes ?? block.durationMinutes ?? 0),
+          (sum, block) =>
+            sum + Number(block.duration_minutes ?? block.durationMinutes ?? 0),
           0
         ) /
           60) *
@@ -1129,47 +1054,6 @@ export default function HomePage() {
     return studyBlocks.filter((block) => block.day === todayName);
   }, [studyBlocks]);
 
-  useEffect(() => {
-    const bosses: BossBattle[] = createBossesFromTasks(
-      tasks
-        .filter((task) => !task.completed)
-        .map((task) => ({
-          id: task.id,
-          title: task.title,
-          module: task.module,
-          dueDate: task.dueDate,
-          priority: task.priority,
-          completed: task.completed,
-        }))
-    );
-
-    const mission: RecoveryMission | null = generateRecoveryMission(
-      tasks
-        .filter((task) => !task.completed)
-        .map((task) => ({
-          id: task.id,
-          title: task.title,
-          module: task.module,
-          dueDate: task.dueDate,
-          priority: task.priority,
-          completed: task.completed,
-        })),
-      cooked.score
-    );
-
-    setGameState((prev) => ({
-      ...prev,
-      bosses,
-      missions: mission ? [mission] : prev.missions.filter((m) => m.status === "active"),
-      league: updateLeagueForWeek(prev.league, prev.stats.weeklyXp),
-    }));
-  }, [tasks, cooked.score]);
-
-  const activeMission =
-    gameState.missions.find((mission) => mission.status === "active") ?? null;
-
-  const topBoss = gameState.bosses[0] ?? null;
-
   const sortedLeaderboard = useMemo(() => {
     const cloned = [...leaderboard];
 
@@ -1205,8 +1089,8 @@ export default function HomePage() {
 
     return cloned
       .sort((a, b) => {
-        if (b.pendingTasks !== a.pendingTasks) return b.pendingTasks - a.pendingTasks;
-        return b.cookedScore - a.cookedScore;
+        if (b.streak !== a.streak) return b.streak - a.streak;
+        return b.completedTasks - a.completedTasks;
       })
       .map((entry, index) => ({ ...entry, rank: index + 1 }));
   }, [leaderboard, leaderboardMode]);
@@ -1228,7 +1112,7 @@ export default function HomePage() {
     if (leaderboardMode === "mostLockedIn") {
       return `@${top.username} is currently the least cooked.`;
     }
-    return `@${top.username} is carrying the heaviest active workload.`;
+    return `@${top.username} is the most active right now.`;
   }, [sortedLeaderboard, leaderboardMode]);
 
   const yourRank = useMemo(() => {
@@ -1259,17 +1143,15 @@ export default function HomePage() {
         } in motion. Protect momentum by finishing what is already open.`
       : "No current backlog. Best move now is staying ahead before pressure builds again.";
 
-  const displayXp = Math.max(gameState.stats.xp, profile?.xp ?? 0);
-  const displayLevel = Math.max(gameState.stats.level, profile?.level ?? 1);
-  const displayStreak = Math.max(gameState.stats.streakDays, profile?.streak ?? 0);
-  const displayBestStreak = Math.max(profile?.best_streak ?? 0, displayStreak);
+  const displayXp = profile?.xp ?? 0;
+  const displayLevel = profile?.level ?? 1;
+  const displayStreak = profile?.streak ?? 0;
+  const displayBestStreak = profile?.best_streak ?? 0;
 
   const profileLevel = displayLevel || getLevelFromXp(displayXp);
   const xpIntoLevel = getXpIntoCurrentLevel(displayXp);
   const xpNeededForNextLevel = getXpNeededForNextLevel();
-  const levelProgressLegacy = Math.min((xpIntoLevel / xpNeededForNextLevel) * 100, 100);
-  const levelProgress = getLevelProgress(displayXp);
-  const tierStyles = getTierStyles(gameState.league.tier);
+  const levelProgress = Math.min((xpIntoLevel / xpNeededForNextLevel) * 100, 100);
 
   const isLoadingPage = loadingTasks || leaderboardLoading;
 
@@ -1280,8 +1162,8 @@ export default function HomePage() {
 
         <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
           <div className="space-y-6 sm:space-y-8">
-            <section className="overflow-hidden rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,#08122b_0%,#061021_100%)] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:p-8 md:p-10">
-              <div className="grid gap-8 xl:grid-cols-[1.15fr_0.85fr] xl:items-center">
+            <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,#08122b_0%,#061021_100%)] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:p-8 md:p-10">
+              <div className="grid gap-8 xl:grid-cols-[1.08fr_0.92fr] xl:items-center">
                 <div className="max-w-3xl">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="inline-flex w-fit items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-300 sm:text-sm">
@@ -1318,8 +1200,8 @@ export default function HomePage() {
                   </h1>
 
                   <p className="mt-4 max-w-2xl text-base leading-8 text-slate-300 sm:text-lg">
-                    Deadlines, focus, momentum, bosses, leagues, XP, and social
-                    pressure — all in one place, so you always know what matters next.
+                    LockdIn keeps your workload, study plan, cooked score, and friend
+                    pressure in one place so you always know what matters next.
                   </p>
 
                   <div className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -1382,13 +1264,6 @@ export default function HomePage() {
                       Open Planner
                     </Link>
                     <Link
-                      href="/analytics"
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-6 py-3 text-sm font-medium text-cyan-200 transition hover:border-cyan-400 hover:bg-cyan-500/20"
-                    >
-                      <TrendingUp className="h-4 w-4" />
-                      Analytics
-                    </Link>
-                    <Link
                       href="/badges"
                       className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-6 py-3 text-sm font-medium text-amber-200 transition hover:border-amber-400 hover:bg-amber-500/20"
                     >
@@ -1399,7 +1274,7 @@ export default function HomePage() {
                       href="/degree-tracker"
                       className="inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-400/20 bg-blue-500/10 px-6 py-3 text-sm font-medium text-blue-200 transition hover:border-blue-400 hover:bg-blue-500/20"
                     >
-                      <BarChart3 className="h-4 w-4" />
+                      <TrendingUp className="h-4 w-4" />
                       Degree Tracker
                     </Link>
                   </div>
@@ -1412,7 +1287,7 @@ export default function HomePage() {
                 </div>
 
                 <div
-                  className={`relative rounded-[30px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl sm:p-6 ${getCookedGlowClass(
+                  className={`relative rounded-[32px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl sm:p-6 ${getCookedGlowClass(
                     cooked.score
                   )}`}
                 >
@@ -1484,7 +1359,7 @@ export default function HomePage() {
                       <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-white/10">
                         <div
                           className="h-full rounded-full bg-white transition-all duration-500"
-                          style={{ width: `${Math.max(6, levelProgressLegacy)}%` }}
+                          style={{ width: `${Math.max(6, levelProgress)}%` }}
                         />
                       </div>
                     </div>
@@ -1571,497 +1446,256 @@ export default function HomePage() {
               </div>
             </section>
 
-            <section className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
-              <div className="space-y-6">
-                <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="inline-flex items-center gap-2 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-400/20">
-                        <Trophy className="h-3.5 w-3.5" />
-                        Social Pressure
-                      </div>
-                      <h2 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
-                        🔥 Cooked Leaderboard
-                      </h2>
-                      <p className="mt-2 text-sm text-slate-400">
-                        {leaderboardHeadline}
-                      </p>
-                      {yourRank ? (
-                        <p className="mt-2 text-xs text-slate-500">
-                          Your current rank: #{yourRank}
-                        </p>
-                      ) : null}
+            <section className="grid gap-6 xl:grid-cols-[1.16fr_0.84fr]">
+              <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="inline-flex items-center gap-2 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-400/20">
+                      <Trophy className="h-3.5 w-3.5" />
+                      Social Pressure
                     </div>
-
-                    {isLoggedIn ? (
-                      <button
-                        type="button"
-                        onClick={() => handleShareLeaderboard(sortedLeaderboard)}
-                        className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
-                      >
-                        Share leaderboard
-                      </button>
+                    <h2 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
+                      🔥 Cooked Leaderboard
+                    </h2>
+                    <p className="mt-2 text-sm text-slate-400">
+                      {leaderboardHeadline}
+                    </p>
+                    {yourRank ? (
+                      <p className="mt-2 text-xs text-slate-500">
+                        Your current rank: #{yourRank}
+                      </p>
                     ) : null}
                   </div>
 
                   {isLoggedIn ? (
-                    <>
-                      <form
-                        onSubmit={handleAddFriend}
-                        className="mt-6 grid gap-3 md:grid-cols-[1fr_auto]"
-                      >
-                        <input
-                          type="text"
-                          value={friendUsername}
-                          onChange={(e) => setFriendUsername(e.target.value)}
-                          placeholder="Add friend by username"
-                          className="rounded-2xl border border-white/10 bg-[#101b38] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
-                        />
-
-                        <button
-                          type="submit"
-                          disabled={addingFriend}
-                          className="rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {addingFriend ? "Adding..." : "Add friend"}
-                        </button>
-                      </form>
-
-                      <p className="mt-3 text-xs text-slate-500">
-                        Add friends by their LockdIn username. You only need to add them once.
-                      </p>
-
-                      {friendError ? (
-                        <p className="mt-3 text-sm text-rose-300">{friendError}</p>
-                      ) : null}
-
-                      {friendSuccess ? (
-                        <p className="mt-3 text-sm text-emerald-300">{friendSuccess}</p>
-                      ) : null}
-
-                      <div className="mt-6 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setLeaderboardMode("mostCooked")}
-                          className={`rounded-full px-4 py-2 text-sm transition ${
-                            leaderboardMode === "mostCooked"
-                              ? "bg-rose-500/15 text-rose-300 ring-1 ring-rose-400/20"
-                              : "bg-white/5 text-slate-300 hover:bg-white/10"
-                          }`}
-                        >
-                          Most Cooked
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setLeaderboardMode("biggestComeback")}
-                          className={`rounded-full px-4 py-2 text-sm transition ${
-                            leaderboardMode === "biggestComeback"
-                              ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/20"
-                              : "bg-white/5 text-slate-300 hover:bg-white/10"
-                          }`}
-                        >
-                          Biggest Comeback
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setLeaderboardMode("mostLockedIn")}
-                          className={`rounded-full px-4 py-2 text-sm transition ${
-                            leaderboardMode === "mostLockedIn"
-                              ? "bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/20"
-                              : "bg-white/5 text-slate-300 hover:bg-white/10"
-                          }`}
-                        >
-                          Most Locked In
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setLeaderboardMode("mostActive")}
-                          className={`rounded-full px-4 py-2 text-sm transition ${
-                            leaderboardMode === "mostActive"
-                              ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/20"
-                              : "bg-white/5 text-slate-300 hover:bg-white/10"
-                          }`}
-                        >
-                          Most Active
-                        </button>
-                      </div>
-
-                      <div className="mt-6 space-y-4">
-                        {leaderboardLoading ? (
-                          <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                            Loading leaderboard...
-                          </div>
-                        ) : sortedLeaderboard.length === 0 ? (
-                          <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                            No one on the leaderboard yet. Add a friend by username to
-                            start the chaos.
-                          </div>
-                        ) : (
-                          sortedLeaderboard.slice(0, 5).map((entry, index) => (
-                            <div
-                              key={entry.id}
-                              className={`rounded-2xl border p-4 sm:p-5 ${getLeaderboardAccent(
-                                entry.cookedScore
-                              )} ${entry.isYou ? "ring-1 ring-blue-400/30" : ""}`}
-                            >
-                              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                                <div className="min-w-0">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                      #{entry.rank}
-                                    </span>
-
-                                    {index === 0 ? (
-                                      <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1 text-xs text-amber-300">
-                                        <span className="inline-flex items-center gap-1">
-                                          <Crown className="h-3 w-3" />
-                                          Top
-                                        </span>
-                                      </span>
-                                    ) : null}
-
-                                    <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/10 text-[10px] font-semibold text-white">
-                                      {entry.avatarUrl ? (
-                                        <Image
-                                          src={entry.avatarUrl}
-                                          alt={entry.username}
-                                          width={32}
-                                          height={32}
-                                          className="h-8 w-8 object-cover"
-                                        />
-                                      ) : (
-                                        <span>{getInitials(getDisplayName(entry))}</span>
-                                      )}
-                                    </div>
-
-                                    <p className="break-words text-base font-semibold text-white">
-                                      @{entry.username}
-                                    </p>
-
-                                    {entry.isYou ? (
-                                      <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs text-blue-200">
-                                        You
-                                      </span>
-                                    ) : null}
-
-                                    <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                      {entry.roastLabel}
-                                    </span>
-                                  </div>
-
-                                  <p className="mt-2 text-sm text-slate-400">
-                                    {entry.course} • {entry.university}
-                                  </p>
-
-                                  <div className="mt-3 flex flex-wrap gap-2">
-                                    <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                      {entry.pendingTasks} active task
-                                      {entry.pendingTasks === 1 ? "" : "s"}
-                                    </span>
-                                    <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                      {entry.completionRate}% completion
-                                    </span>
-                                    <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                      {entry.streak} day streak
-                                    </span>
-                                    <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                      {entry.momentumLabel}
-                                    </span>
-                                    <span
-                                      className={`rounded-full border px-3 py-1 text-xs ${
-                                        entry.weeklyCookedChange < 0
-                                          ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
-                                          : entry.weeklyCookedChange > 0
-                                          ? "border-rose-400/20 bg-rose-500/10 text-rose-300"
-                                          : "border-white/10 bg-white/5 text-slate-300"
-                                      }`}
-                                    >
-                                      7d cooked: {entry.weeklyCookedChange > 0 ? "+" : ""}
-                                      {entry.weeklyCookedChange}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <div className="text-left sm:text-right">
-                                  <p
-                                    className={`text-3xl font-semibold sm:text-4xl ${getCookedTextColor(
-                                      entry.cookedScore
-                                    )}`}
-                                  >
-                                    {entry.cookedScore}
-                                  </p>
-                                  <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
-                                    cooked score
-                                  </p>
-                                  <p className="mt-2 text-sm text-slate-300">
-                                    {entry.status}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-black/20">
-                                <div
-                                  className={`h-full rounded-full ${getCookedBarClass(
-                                    entry.cookedScore
-                                  )}`}
-                                  style={{
-                                    width: `${Math.max(6, entry.cookedScore)}%`,
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="mt-6 rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                      Log in to start a cooked leaderboard with your friends.
-                    </div>
-                  )}
+                    <button
+                      type="button"
+                      onClick={() => handleShareLeaderboard(sortedLeaderboard)}
+                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                    >
+                      Share leaderboard
+                    </button>
+                  ) : null}
                 </div>
 
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <div
-                    className={`rounded-[28px] border p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6 ${tierStyles.card}`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                          Weekly League
-                        </p>
-                        <h3 className="mt-3 text-2xl font-semibold text-white">
-                          {getTierIconLabel(gameState.league.tier)}
-                        </h3>
-                        <p className="mt-2 text-sm text-slate-300">
-                          Keep stacking XP this week to climb your league tier.
-                        </p>
-                      </div>
-                      <div
-                        className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${tierStyles.badge}`}
+                {isLoggedIn ? (
+                  <>
+                    <form
+                      onSubmit={handleAddFriend}
+                      className="mt-6 grid gap-3 md:grid-cols-[1fr_auto]"
+                    >
+                      <input
+                        type="text"
+                        value={friendUsername}
+                        onChange={(e) => setFriendUsername(e.target.value)}
+                        placeholder="Add friend by username"
+                        className="rounded-2xl border border-white/10 bg-[#101b38] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
+                      />
+
+                      <button
+                        type="submit"
+                        disabled={addingFriend}
+                        className="rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        {gameState.league.tier}
-                      </div>
+                        {addingFriend ? "Adding..." : "Add friend"}
+                      </button>
+                    </form>
+
+                    <p className="mt-3 text-xs text-slate-500">
+                      Friend scores now show from their latest saved LockdIn sync.
+                    </p>
+
+                    {friendError ? (
+                      <p className="mt-3 text-sm text-rose-300">{friendError}</p>
+                    ) : null}
+
+                    {friendSuccess ? (
+                      <p className="mt-3 text-sm text-emerald-300">{friendSuccess}</p>
+                    ) : null}
+
+                    <div className="mt-6 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setLeaderboardMode("mostCooked")}
+                        className={`rounded-full px-4 py-2 text-sm transition ${
+                          leaderboardMode === "mostCooked"
+                            ? "bg-rose-500/15 text-rose-300 ring-1 ring-rose-400/20"
+                            : "bg-white/5 text-slate-300 hover:bg-white/10"
+                        }`}
+                      >
+                        Most Cooked
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLeaderboardMode("biggestComeback")}
+                        className={`rounded-full px-4 py-2 text-sm transition ${
+                          leaderboardMode === "biggestComeback"
+                            ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/20"
+                            : "bg-white/5 text-slate-300 hover:bg-white/10"
+                        }`}
+                      >
+                        Biggest Comeback
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLeaderboardMode("mostLockedIn")}
+                        className={`rounded-full px-4 py-2 text-sm transition ${
+                          leaderboardMode === "mostLockedIn"
+                            ? "bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/20"
+                            : "bg-white/5 text-slate-300 hover:bg-white/10"
+                        }`}
+                      >
+                        Most Locked In
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLeaderboardMode("mostActive")}
+                        className={`rounded-full px-4 py-2 text-sm transition ${
+                          leaderboardMode === "mostActive"
+                            ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/20"
+                            : "bg-white/5 text-slate-300 hover:bg-white/10"
+                        }`}
+                      >
+                        Most Active
+                      </button>
                     </div>
 
-                    <div className="mt-5 grid grid-cols-3 gap-3">
-                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                          Weekly XP
-                        </p>
-                        <p className="mt-2 text-2xl font-semibold text-white">
-                          {gameState.stats.weeklyXp}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                          Rank
-                        </p>
-                        <p className="mt-2 text-2xl font-semibold text-white">
-                          {gameState.league.weeklyRank ?? "--"}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                          Level
-                        </p>
-                        <p className="mt-2 text-2xl font-semibold text-white">
-                          {levelProgress.level}
-                        </p>
-                      </div>
-                    </div>
+                    <div className="mt-6 space-y-4">
+                      {leaderboardLoading ? (
+                        <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                          Loading leaderboard...
+                        </div>
+                      ) : sortedLeaderboard.length === 0 ? (
+                        <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                          No one on the leaderboard yet. Add a friend by username to
+                          start the chaos.
+                        </div>
+                      ) : (
+                        sortedLeaderboard.slice(0, 5).map((entry, index) => (
+                          <div
+                            key={entry.id}
+                            className={`rounded-2xl border p-4 sm:p-5 ${getLeaderboardAccent(
+                              entry.cookedScore
+                            )} ${entry.isYou ? "ring-1 ring-blue-400/30" : ""}`}
+                          >
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    #{entry.rank}
+                                  </span>
 
-                    <div className="mt-5">
-                      <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
-                        <span>Progress to next level</span>
-                        <span>{levelProgress.percent}%</span>
-                      </div>
-                      <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
-                        <div
-                          className="h-full rounded-full bg-white transition-all duration-500"
-                          style={{ width: `${Math.max(6, levelProgress.percent)}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
+                                  {index === 0 ? (
+                                    <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1 text-xs text-amber-300">
+                                      <span className="inline-flex items-center gap-1">
+                                        <Crown className="h-3 w-3" />
+                                        Top
+                                      </span>
+                                    </span>
+                                  ) : null}
 
-                  <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
-                    <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20">
-                      <Zap className="h-3.5 w-3.5" />
-                      Recovery Mission
-                    </div>
+                                  <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/10 text-[10px] font-semibold text-white">
+                                    {entry.avatarUrl ? (
+                                      <Image
+                                        src={entry.avatarUrl}
+                                        alt={entry.username}
+                                        width={32}
+                                        height={32}
+                                        className="h-8 w-8 object-cover"
+                                      />
+                                    ) : (
+                                      <span>{getInitials(getDisplayName(entry))}</span>
+                                    )}
+                                  </div>
 
-                    {activeMission ? (
-                      <>
-                        <h3 className="mt-4 text-2xl font-semibold tracking-tight text-white">
-                          {activeMission.title}
-                        </h3>
-                        <p className="mt-3 text-sm leading-7 text-slate-300">
-                          {activeMission.description}
-                        </p>
+                                  <p className="break-words text-base font-semibold text-white">
+                                    @{entry.username}
+                                  </p>
 
-                        <div className="mt-5 space-y-3">
-                          {activeMission.goals.map((goal, index) => {
-                            const percent =
-                              goal.target > 0
-                                ? Math.min(
-                                    100,
-                                    Math.round((goal.current / goal.target) * 100)
-                                  )
-                                : 0;
+                                  {entry.isYou ? (
+                                    <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs text-blue-200">
+                                      You
+                                    </span>
+                                  ) : null}
 
-                            const label =
-                              goal.type === "complete_overdue_task"
-                                ? "Clear overdue tasks"
-                                : goal.type === "complete_task"
-                                ? "Complete tasks"
-                                : "Study minutes";
-
-                            return (
-                              <div
-                                key={`${goal.type}-${index}`}
-                                className="rounded-2xl border border-white/10 bg-[#101b38] p-4"
-                              >
-                                <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-                                  <span className="text-white">{label}</span>
-                                  <span className="text-slate-400">
-                                    {goal.current}/{goal.target}
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    {entry.roastLabel}
                                   </span>
                                 </div>
-                                <div className="h-2 overflow-hidden rounded-full bg-white/10">
-                                  <div
-                                    className="h-full rounded-full bg-amber-300 transition-all duration-500"
-                                    style={{ width: `${Math.max(4, percent)}%` }}
-                                  />
+
+                                <p className="mt-2 text-sm text-slate-400">
+                                  {entry.course} • {entry.university}
+                                </p>
+
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    {entry.pendingTasks} active task
+                                    {entry.pendingTasks === 1 ? "" : "s"}
+                                  </span>
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    {entry.completionRate}% completion
+                                  </span>
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    {entry.streak} day streak
+                                  </span>
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    {entry.momentumLabel}
+                                  </span>
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    {entry.lastUpdatedLabel}
+                                  </span>
+                                  <span
+                                    className={`rounded-full border px-3 py-1 text-xs ${
+                                      entry.weeklyCookedChange < 0
+                                        ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
+                                        : entry.weeklyCookedChange > 0
+                                        ? "border-rose-400/20 bg-rose-500/10 text-rose-300"
+                                        : "border-white/10 bg-white/5 text-slate-300"
+                                    }`}
+                                  >
+                                    7d cooked: {entry.weeklyCookedChange > 0 ? "+" : ""}
+                                    {entry.weeklyCookedChange}
+                                  </span>
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
 
-                        <div className="mt-5 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-                          Reward: +{activeMission.rewardXp} XP
-                        </div>
-                      </>
-                    ) : (
-                      <div className="mt-4 rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                        No active recovery mission right now. Keep stacking clean XP.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
-                  <div className="flex items-center justify-between gap-4">
-                    <h3 className="text-xl font-semibold sm:text-2xl">Biggest Threat</h3>
-                    <Link
-                      href="/performance"
-                      className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
-                    >
-                      Open dashboard
-                    </Link>
-                  </div>
-
-                  {loadingTasks ? (
-                    <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 text-slate-300 sm:p-6">
-                      Loading your biggest threat...
-                    </div>
-                  ) : biggestThreat ? (
-                    <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 sm:p-6">
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0">
-                          <p className="break-words text-lg font-semibold">
-                            {biggestThreat.title}
-                          </p>
-                          <p className="mt-2 text-sm text-slate-400">
-                            {biggestThreat.module}
-                          </p>
-                        </div>
-                        <span
-                          className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
-                            biggestThreat.priority
-                          )}`}
-                        >
-                          {biggestThreat.priority}
-                        </span>
-                      </div>
-
-                      <p className="mt-5 text-sm text-slate-300">
-                        Due {biggestThreat.dueDate}
-                      </p>
-
-                      <p className="mt-2 text-sm text-slate-400">
-                        {getUpcomingLabel(getDaysUntil(biggestThreat.dueDate))}
-                      </p>
-
-                      <Link
-                        href="/tasks"
-                        className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
-                      >
-                        Go to tasks
-                        <ChevronRight className="h-4 w-4" />
-                      </Link>
-                    </div>
-                  ) : (
-                    <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 text-slate-300 sm:p-6">
-                      No immediate threats right now. That is a very nice position to be in.
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
-                  <div className="flex items-center justify-between gap-4">
-                    <h3 className="text-xl font-semibold sm:text-2xl">Today’s Focus</h3>
-                    <Link
-                      href="/tasks"
-                      className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
-                    >
-                      Manage tasks
-                    </Link>
-                  </div>
-
-                  <div className="mt-6 space-y-4">
-                    {loadingTasks ? (
-                      <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                        Loading focus tasks...
-                      </div>
-                    ) : todayFocus.length === 0 ? (
-                      <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                        No active tasks right now. That board is looking clean.
-                      </div>
-                    ) : (
-                      todayFocus.map((task, index) => (
-                        <div
-                          key={task.id}
-                          className="rounded-2xl border border-white/10 bg-[#101b38] p-4 sm:p-5"
-                        >
-                          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="min-w-0">
-                              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                                Focus {index + 1}
-                              </p>
-                              <p className="mt-2 break-words text-base font-medium text-white">
-                                {task.title}
-                              </p>
-                              <p className="mt-2 text-sm text-slate-400">{task.module}</p>
-                              <p className="mt-2 text-sm text-slate-500">
-                                {getUpcomingLabel(getDaysUntil(task.dueDate))}
-                              </p>
+                              <div className="text-left sm:text-right">
+                                <p
+                                  className={`text-3xl font-semibold sm:text-4xl ${getCookedTextColor(
+                                    entry.cookedScore
+                                  )}`}
+                                >
+                                  {entry.cookedScore}
+                                </p>
+                                <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
+                                  cooked score
+                                </p>
+                                <p className="mt-2 text-sm text-slate-300">
+                                  {entry.status}
+                                </p>
+                              </div>
                             </div>
 
-                            <span
-                              className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
-                                task.priority
-                              )}`}
-                            >
-                              {task.priority}
-                            </span>
+                            <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-black/20">
+                              <div
+                                className={`h-full rounded-full ${getCookedBarClass(
+                                  entry.cookedScore
+                                )}`}
+                                style={{
+                                  width: `${Math.max(6, entry.cookedScore)}%`,
+                                }}
+                              />
+                            </div>
                           </div>
-                        </div>
-                      ))
-                    )}
+                        ))
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-6 rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                    Log in to start a cooked leaderboard with your friends.
                   </div>
-                </div>
+                )}
               </div>
 
               <div className="space-y-6">
@@ -2141,64 +1775,6 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <div className="rounded-[28px] border border-rose-400/20 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-400/20">
-                    <Swords className="h-3.5 w-3.5" />
-                    Boss Battle
-                  </div>
-
-                  {topBoss ? (
-                    <>
-                      <div className="mt-4 flex items-start justify-between gap-3">
-                        <div>
-                          <h2 className="text-2xl font-semibold tracking-tight text-white">
-                            {topBoss.title}
-                          </h2>
-                          <p className="mt-2 text-sm text-slate-400">
-                            {topBoss.module} • due {topBoss.dueDate}
-                          </p>
-                        </div>
-
-                        <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3 text-rose-300">
-                          {topBoss.isComplete ? (
-                            <Skull className="h-5 w-5" />
-                          ) : (
-                            <Swords className="h-5 w-5" />
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="mt-5">
-                        <div className="mb-2 flex items-center justify-between text-sm">
-                          <span className="text-slate-400">Boss HP</span>
-                          <span className="font-semibold text-white">
-                            {topBoss.currentHp}/{topBoss.maxHp}
-                          </span>
-                        </div>
-                        <div className="h-3 overflow-hidden rounded-full bg-white/10">
-                          <div
-                            className="h-full rounded-full bg-rose-400 transition-all duration-500"
-                            style={{
-                              width: `${Math.max(
-                                4,
-                                Math.round((topBoss.currentHp / topBoss.maxHp) * 100)
-                              )}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      <p className="mt-4 text-sm text-slate-300">
-                        Each completed task is meant to chip away at your deadlines like a boss fight.
-                      </p>
-                    </>
-                  ) : (
-                    <div className="mt-4 rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                      No active boss right now. Add more tasks to spawn one.
-                    </div>
-                  )}
-                </div>
-
                 <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
                   <div className="inline-flex items-center gap-2 rounded-full bg-blue-500/15 px-3 py-1 text-xs font-medium text-blue-300 ring-1 ring-blue-400/20">
                     <Target className="h-3.5 w-3.5" />
@@ -2246,49 +1822,6 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                        XP Activity
-                      </p>
-                      <h3 className="mt-3 text-2xl font-semibold text-white">
-                        Recent progression
-                      </h3>
-                    </div>
-
-                    <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
-                      {gameState.recentXpEvents.length} events
-                    </div>
-                  </div>
-
-                  <div className="mt-5 space-y-3">
-                    {gameState.recentXpEvents.length === 0 ? (
-                      <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                        No XP logged yet. Completing tasks will start filling this up.
-                      </div>
-                    ) : (
-                      gameState.recentXpEvents.slice(0, 5).map((event) => (
-                        <div
-                          key={event.id}
-                          className="flex items-center justify-between rounded-2xl border border-white/10 bg-[#101b38] p-4"
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate font-medium text-white">{event.label}</p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              {new Date(event.createdAt).toLocaleString("en-GB")}
-                            </p>
-                          </div>
-
-                          <div className="ml-3 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-sm font-semibold text-emerald-300">
-                            +{event.value} XP
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
                 <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#0f172a_0%,#111827_55%,#1f2937_100%)] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -2306,50 +1839,158 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  {gameState.lastShareMoment ? (
-                    <>
-                      <p className="mt-4 text-xs uppercase tracking-[0.2em] text-slate-400">
-                        {gameState.lastShareMoment.type.replaceAll("_", " ")}
-                      </p>
-                      <h4 className="mt-2 text-2xl font-semibold text-white">
-                        {gameState.lastShareMoment.title}
-                      </h4>
-                      <p className="mt-2 text-sm text-slate-300">
-                        {gameState.lastShareMoment.subtitle}
-                      </p>
+                  <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-5">
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                      Current snapshot
+                    </p>
+                    <h4 className="mt-2 text-2xl font-semibold text-white">
+                      {getRoastLabel(cooked.score)}
+                    </h4>
+                    <p className="mt-2 text-sm text-slate-300">
+                      You’re on {cooked.score}/100 with {stats.pending} active tasks and a{" "}
+                      {displayStreak}-day streak.
+                    </p>
 
-                      <div className="mt-5 grid grid-cols-3 gap-3">
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                            Score
-                          </p>
-                          <p className="mt-2 text-xl font-semibold text-white">
-                            {gameState.lastShareMoment.score}
-                          </p>
-                        </div>
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                            XP
-                          </p>
-                          <p className="mt-2 text-xl font-semibold text-white">
-                            {gameState.lastShareMoment.xp}
-                          </p>
-                        </div>
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                            Streak
-                          </p>
-                          <p className="mt-2 text-xl font-semibold text-white">
-                            {gameState.lastShareMoment.streakDays}
-                          </p>
+                    <div className="mt-5 grid grid-cols-3 gap-3">
+                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                          Score
+                        </p>
+                        <p className="mt-2 text-xl font-semibold text-white">
+                          {cooked.score}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                          XP
+                        </p>
+                        <p className="mt-2 text-xl font-semibold text-white">
+                          {displayXp}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                          Streak
+                        </p>
+                        <p className="mt-2 text-xl font-semibold text-white">
+                          {displayStreak}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+              <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+                <div className="flex items-center justify-between gap-4">
+                  <h3 className="text-xl font-semibold sm:text-2xl">Biggest Threat</h3>
+                  <Link
+                    href="/performance"
+                    className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
+                  >
+                    Open dashboard
+                  </Link>
+                </div>
+
+                {loadingTasks ? (
+                  <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 text-slate-300 sm:p-6">
+                    Loading your biggest threat...
+                  </div>
+                ) : biggestThreat ? (
+                  <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 sm:p-6">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="break-words text-lg font-semibold">
+                          {biggestThreat.title}
+                        </p>
+                        <p className="mt-2 text-sm text-slate-400">
+                          {biggestThreat.module}
+                        </p>
+                      </div>
+                      <span
+                        className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
+                          biggestThreat.priority
+                        )}`}
+                      >
+                        {biggestThreat.priority}
+                      </span>
+                    </div>
+
+                    <p className="mt-5 text-sm text-slate-300">
+                      Due {biggestThreat.dueDate}
+                    </p>
+
+                    <p className="mt-2 text-sm text-slate-400">
+                      {getUpcomingLabel(getDaysUntil(biggestThreat.dueDate))}
+                    </p>
+
+                    <Link
+                      href="/tasks"
+                      className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
+                    >
+                      Go to tasks
+                      <ChevronRight className="h-4 w-4" />
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 text-slate-300 sm:p-6">
+                    No immediate threats right now. That is a very nice position to be in.
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+                <div className="flex items-center justify-between gap-4">
+                  <h3 className="text-xl font-semibold sm:text-2xl">Today’s Focus</h3>
+                  <Link
+                    href="/tasks"
+                    className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
+                  >
+                    Manage tasks
+                  </Link>
+                </div>
+
+                <div className="mt-6 space-y-4">
+                  {loadingTasks ? (
+                    <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                      Loading focus tasks...
+                    </div>
+                  ) : todayFocus.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                      No active tasks right now. That board is looking clean.
+                    </div>
+                  ) : (
+                    todayFocus.map((task, index) => (
+                      <div
+                        key={task.id}
+                        className="rounded-2xl border border-white/10 bg-[#101b38] p-4 sm:p-5"
+                      >
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                              Focus {index + 1}
+                            </p>
+                            <p className="mt-2 break-words text-base font-medium text-white">
+                              {task.title}
+                            </p>
+                            <p className="mt-2 text-sm text-slate-400">{task.module}</p>
+                            <p className="mt-2 text-sm text-slate-500">
+                              {getUpcomingLabel(getDaysUntil(task.dueDate))}
+                            </p>
+                          </div>
+
+                          <span
+                            className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
+                              task.priority
+                            )}`}
+                          >
+                            {task.priority}
+                          </span>
                         </div>
                       </div>
-                    </>
-                  ) : (
-                    <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-5 text-slate-300">
-                      No flex moment yet. Beat a boss or recover your score and this
-                      section will light up.
-                    </div>
+                    ))
                   )}
                 </div>
               </div>
@@ -2451,16 +2092,6 @@ export default function HomePage() {
                   </Link>
 
                   <Link
-                    href="/analytics"
-                    className="rounded-2xl border border-cyan-400/20 bg-[linear-gradient(135deg,rgba(34,211,238,0.18),rgba(15,23,42,0.95))] p-5 transition hover:border-cyan-400 hover:bg-[linear-gradient(135deg,rgba(34,211,238,0.24),rgba(15,23,42,1))]"
-                  >
-                    <p className="text-lg font-medium text-white">Analytics</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-300">
-                      View cooked score history, completed tasks, and study hours.
-                    </p>
-                  </Link>
-
-                  <Link
                     href="/badges"
                     className="rounded-2xl border border-amber-400/20 bg-[linear-gradient(135deg,rgba(251,191,36,0.18),rgba(15,23,42,0.95))] p-5 transition hover:border-amber-400 hover:bg-[linear-gradient(135deg,rgba(251,191,36,0.24),rgba(15,23,42,1))]"
                   >
@@ -2549,12 +2180,13 @@ export default function HomePage() {
                 </div>
 
                 <h3 className="mt-4 text-2xl font-semibold text-white">
-                  Student survival, but gamified properly.
+                  Student survival, but actually clean.
                 </h3>
 
                 <p className="mt-4 text-sm leading-7 text-slate-300">
-                  Your cooked score, XP, streak, bosses, recovery missions, and
-                  leaderboard all now feed the same loop: survive, recover, and flex.
+                  Your cooked score, streak, deadlines, planner, and leaderboard now
+                  all point toward one thing: helping you stay ahead instead of
+                  reacting too late.
                 </p>
 
                 <div className="mt-6 grid grid-cols-2 gap-4">
