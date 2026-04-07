@@ -140,6 +140,8 @@ type NormalizedStudyBlock = StudyBlock & {
   focus?: string;
   day?: string;
   time?: string;
+  task_id?: string | null;
+  location?: string;
 };
 
 const STUDY_PLAN_STORAGE_KEY = "lockdin_study_plan";
@@ -171,26 +173,30 @@ function normalizeStudyBlocks(raw: unknown[]): NormalizedStudyBlock[] {
   return raw.map((item, index) => {
     const block = (item ?? {}) as Record<string, unknown>;
 
+    const taskIdValue =
+      typeof block.taskId === "string"
+        ? block.taskId
+        : typeof block.task_id === "string"
+        ? block.task_id
+        : "";
+
+    const durationValue = Number(
+      block.duration_minutes ?? block.durationMinutes ?? 0
+    );
+
     return {
       id: String(block.id ?? `study-${index}`),
       day: String(block.day ?? ""),
       time: String(block.time ?? ""),
       subject: String(block.subject ?? ""),
       focus: String(block.focus ?? ""),
-      task_id:
-        block.task_id === null || typeof block.task_id === "string"
-          ? block.task_id
-          : null,
-      duration_minutes: Number(
-        block.duration_minutes ?? block.durationMinutes ?? 0
-      ),
-      durationMinutes: Number(
-        block.durationMinutes ?? block.duration_minutes ?? 0
-      ),
+      taskId: taskIdValue,
+      task_id: taskIdValue || null,
+      durationMinutes: durationValue,
+      duration_minutes: durationValue,
       completed: Boolean(block.completed),
-      location:
-        typeof block.location === "string" ? block.location : undefined,
-    } as NormalizedStudyBlock;
+      location: typeof block.location === "string" ? block.location : "",
+    };
   });
 }
 
