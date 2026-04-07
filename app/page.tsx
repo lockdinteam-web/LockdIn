@@ -667,8 +667,10 @@ export default function HomePage() {
 
     async function checkAuthAndProfile() {
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const user = session?.user ?? null;
 
       setIsLoggedIn(!!user);
       setCurrentUserId(user?.id ?? null);
@@ -695,7 +697,7 @@ export default function HomePage() {
       await loadLeaderboard(user.id);
     }
 
-    checkAuthAndProfile();
+    void checkAuthAndProfile();
 
     const {
       data: { subscription },
@@ -726,8 +728,17 @@ export default function HomePage() {
       await loadLeaderboard(user.id);
     });
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void checkAuthAndProfile();
+      }
+    };
+
+    window.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
       subscription.unsubscribe();
+      window.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [router]);
 
@@ -758,7 +769,7 @@ export default function HomePage() {
       await upsertTodayLeaderboardSnapshotClient(currentUserId, leaderboardTasks);
     }
 
-    syncMySnapshot();
+    void syncMySnapshot();
   }, [currentUserId, tasks, loading]);
 
   useEffect(() => {
