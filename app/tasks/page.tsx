@@ -12,6 +12,9 @@ import {
   CalendarDays,
   BookOpen,
   Flag,
+  Trophy,
+  Flame,
+  Sparkles,
 } from "lucide-react";
 
 type Priority = "High" | "Medium" | "Low";
@@ -36,8 +39,24 @@ type DatabaseTask = {
   created_at: string;
 };
 
+type ProfileProgress = {
+  xp: number;
+  level: number;
+  streak: number;
+  best_streak: number;
+  last_active_date: string | null;
+};
+
+const XP_REWARD_TASK_COMPLETE = 10;
+
 function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function getYesterdayDate() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
 }
 
 function calculateSimpleCookedScore(tasks: Task[]) {
@@ -80,6 +99,18 @@ function calculateSimpleCookedScore(tasks: Task[]) {
   }
 
   return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function getLevelFromXp(xp: number) {
+  return Math.floor(xp / 100) + 1;
+}
+
+function getXpIntoCurrentLevel(xp: number) {
+  return xp % 100;
+}
+
+function getXpNeededForNextLevel() {
+  return 100;
 }
 
 async function recordActivityDayClient(userId: string) {
@@ -131,6 +162,167 @@ async function upsertTodayLeaderboardSnapshotClient(
   }
 }
 
+async function getProfileProgress(userId: string) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("xp, level, streak, best_streak, last_active_date")
+    .eq("id", userId)
+    .single<ProfileProgress>();
+
+  if (error) {
+    console.error("Error loading profile progress:", error.message);
+    return {
+      xp: 0,
+      level: 1,
+      streak: 0,
+      best_streak: 0,
+      last_active_date: null,
+    };
+  }
+
+  return {
+    xp: data?.xp ?? 0,
+    level: data?.level ?? 1,
+    streak: data?.streak ?? 0,
+    best_streak: data?.best_streak ?? 0,
+    last_active_date: data?.last_active_date ?? null,
+  };
+}
+
+async function syncDailyProfileProgress(userId: string) {
+  const profile = await getProfileProgress(userId);
+
+  const today = getTodayDate();
+  const yesterday = getYesterdayDate();
+
+  if (profile.last_active_date === today) {
+    return {
+      ...profile,
+      level: profile.level || getLevelFromXp(profile.xp || 0),
+    };
+  }
+
+  let nextStreak = 1;
+
+  if (profile.last_active_date === yesterday) {
+    nextStreak = (profile.streak ?? 0) + 1;
+  }
+
+  const nextBestStreak = Math.max(profile.best_streak ?? 0, nextStreak);
+  const nextLevel = getLevelFromXp(profile.xp ?? 0);
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      streak: nextStreak,
+      best_streak: nextBestStreak,
+      level: nextLevel,
+      last_active_date: today,
+    })
+    .eq("id", userId);
+
+  if (error) {
+    console.error("Error syncing profile progress:", error.message);
+  }
+
+  return {
+    ...profile,
+    streak: nextStreak,
+    best_streak: nextBestStreak,
+    level: nextLevel,
+    last_active_date: today,
+  };
+}
+
+async function awardTaskCompletionXp(userId: string, task: Task) {
+  const profile = await getProfileProgress(userId);
+
+  const nextXp = (profile.xp ?? 0) + XP_REWARD_TASK_COMPLETE;
+  const nextLevel = getLevelFromXp(nextXp);
+
+  const { error: profileError } = await supabase
+    .from("profiles")
+    .update({
+      xp: nextXp,
+      level: nextLevel,
+    })
+    .eq("id", userId);
+
+  if (profileError) {
+    console.error("Error awarding XP:", profileError.message);
+  }
+
+  const { error: activityError } = await supabase.from("activity_log").insert({
+    user_id: userId,
+    action: "task_completed",
+    points: XP_REWARD_TASK_COMPLETE,
+    metadata: {
+      taskId: task.id,
+      title: task.title,
+      module: task.module,
+    },
+  });
+
+  if (activityError) {
+    console.error("Error logging activity:", activityError.message);
+  }
+
+  if (nextXp >= 500) {
+    const { error: badgeError } = await supabase.from("badges").upsert(
+      {
+        user_id: userId,
+        badge_key: "xp_500",
+      },
+      {
+        onConflict: "user_id,badge_key",
+        ignoreDuplicates: true,
+      }
+    );
+
+    if (badgeError) {
+      console.error("Error unlocking xp_500 badge:", badgeError.message);
+    }
+  }
+}
+
+async function maybeUnlockFirstTaskBadge(userId: string, completedTasks: number) {
+  if (completedTasks < 1) return;
+
+  const { error } = await supabase.from("badges").upsert(
+    {
+      user_id: userId,
+      badge_key: "first_task",
+    },
+    {
+      onConflict: "user_id,badge_key",
+      ignoreDuplicates: true,
+    }
+  );
+
+  if (error) {
+    console.error("Error unlocking first_task badge:", error.message);
+  }
+}
+
+async function maybeUnlockStreakBadge(userId: string, streak: number) {
+  if (streak < 7) return;
+
+  const { error } = await supabase.from("badges").upsert(
+    {
+      user_id: userId,
+      badge_key: "streak_7",
+    },
+    {
+      onConflict: "user_id,badge_key",
+      ignoreDuplicates: true,
+    }
+  );
+
+  if (error) {
+    console.error("Error unlocking streak_7 badge:", error.message);
+  }
+}
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -139,6 +331,11 @@ export default function TasksPage() {
   const [module, setModule] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState<Priority>("Medium");
+
+  const [xp, setXp] = useState(0);
+  const [level, setLevel] = useState(1);
+  const [streak, setStreak] = useState(0);
+  const [bestStreak, setBestStreak] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -156,6 +353,17 @@ export default function TasksPage() {
           window.location.href = "/login";
           return;
         }
+
+        const syncedProfile = await syncDailyProfileProgress(user.id);
+
+        if (mounted) {
+          setXp(syncedProfile.xp ?? 0);
+          setLevel(syncedProfile.level ?? 1);
+          setStreak(syncedProfile.streak ?? 0);
+          setBestStreak(syncedProfile.best_streak ?? 0);
+        }
+
+        await maybeUnlockStreakBadge(user.id, syncedProfile.streak ?? 0);
 
         const { data, error } = await supabase
           .from("tasks")
@@ -196,6 +404,14 @@ export default function TasksPage() {
       mounted = false;
     };
   }, []);
+
+  async function refreshProfileUi(userId: string) {
+    const latest = await getProfileProgress(userId);
+    setXp(latest.xp ?? 0);
+    setLevel(latest.level ?? 1);
+    setStreak(latest.streak ?? 0);
+    setBestStreak(latest.best_streak ?? 0);
+  }
 
   async function handleAddTask(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -286,6 +502,14 @@ export default function TasksPage() {
 
     if (newCompletedValue) {
       await recordActivityDayClient(user.id);
+      await awardTaskCompletionXp(user.id, currentTask);
+
+      const completedCount = updatedTasks.filter((task) => task.completed).length;
+      await maybeUnlockFirstTaskBadge(user.id, completedCount);
+
+      const syncedProfile = await syncDailyProfileProgress(user.id);
+      await maybeUnlockStreakBadge(user.id, syncedProfile.streak ?? 0);
+      await refreshProfileUi(user.id);
     }
 
     await upsertTodayLeaderboardSnapshotClient(user.id, updatedTasks);
@@ -330,6 +554,10 @@ export default function TasksPage() {
       return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
     });
   }, [tasks]);
+
+  const xpIntoLevel = getXpIntoCurrentLevel(xp);
+  const xpNeededForNextLevel = getXpNeededForNextLevel();
+  const levelProgress = Math.min((xpIntoLevel / xpNeededForNextLevel) * 100, 100);
 
   function getPriorityClasses(priority: Priority) {
     switch (priority) {
@@ -390,7 +618,7 @@ export default function TasksPage() {
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-5">
               <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg shadow-black/20">
                 <p className="text-sm text-slate-400">Total Tasks</p>
                 <h2 className="mt-2 text-3xl font-bold">{totalTasks}</h2>
@@ -408,6 +636,35 @@ export default function TasksPage() {
                 <h2 className="mt-2 text-3xl font-bold text-emerald-400">
                   {completedTasks}
                 </h2>
+              </div>
+
+              <div className="rounded-3xl border border-orange-500/20 bg-orange-500/10 p-5 shadow-lg shadow-black/20">
+                <div className="flex items-center gap-2 text-orange-300">
+                  <Flame className="h-4 w-4" />
+                  <p className="text-sm">Streak</p>
+                </div>
+                <h2 className="mt-2 text-3xl font-bold text-white">{streak}</h2>
+                <p className="mt-2 text-xs text-orange-200/70">
+                  Best: {bestStreak} days
+                </p>
+              </div>
+
+              <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/10 p-5 shadow-lg shadow-black/20">
+                <div className="flex items-center gap-2 text-cyan-300">
+                  <Trophy className="h-4 w-4" />
+                  <p className="text-sm">Level {level}</p>
+                </div>
+                <h2 className="mt-2 text-3xl font-bold text-white">{xp}</h2>
+                <p className="mt-2 text-xs text-cyan-200/70">total XP</p>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-white transition-all duration-500"
+                    style={{ width: `${Math.max(6, levelProgress)}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-cyan-200/70">
+                  {xpIntoLevel}/{xpNeededForNextLevel} to next level
+                </p>
               </div>
             </div>
           </div>
@@ -501,6 +758,23 @@ export default function TasksPage() {
               Add Task
             </button>
           </form>
+
+          <div className="mb-8 rounded-3xl border border-blue-500/20 bg-blue-500/10 p-5">
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl bg-white/10 p-2">
+                <Sparkles className="h-5 w-5 text-blue-200" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-blue-200">
+                  XP is now live
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Every time you complete a task, you earn {XP_REWARD_TASK_COMPLETE} XP.
+                  Your streak updates automatically, and badges unlock as you build momentum.
+                </p>
+              </div>
+            </div>
+          </div>
 
           <div className="space-y-4">
             {loading ? (

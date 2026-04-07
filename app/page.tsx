@@ -22,6 +22,9 @@ import {
   Crown,
   Target,
   Zap,
+  Shield,
+  TrendingUp,
+  Medal,
 } from "lucide-react";
 
 type Priority = "High" | "Medium" | "Low";
@@ -49,6 +52,12 @@ type HomeProfile = {
   username: string;
   university: string;
   course: string;
+  xp: number;
+  level: number;
+  streak: number;
+  best_streak: number;
+  last_active_date: string | null;
+  premium: boolean;
 };
 
 type LeaderboardProfile = {
@@ -260,6 +269,18 @@ function getLeaderboardAccent(score: number) {
   return "border-emerald-400/30 bg-emerald-500/10";
 }
 
+function getLevelFromXp(xp: number) {
+  return Math.floor(xp / 100) + 1;
+}
+
+function getXpIntoCurrentLevel(xp: number) {
+  return xp % 100;
+}
+
+function getXpNeededForNextLevel() {
+  return 100;
+}
+
 async function copyText(text: string) {
   try {
     await navigator.clipboard.writeText(text);
@@ -316,6 +337,56 @@ async function upsertTodayLeaderboardSnapshotClient(
   if (activityError) {
     console.error("Error upserting activity day:", activityError.message);
   }
+}
+
+async function syncDailyProfileProgress(
+  userId: string,
+  profile: HomeProfile
+): Promise<HomeProfile> {
+  const today = getTodayDate();
+  const yesterday = getDateDaysAgo(1);
+
+  if (profile.last_active_date === today) {
+    return {
+      ...profile,
+      level: profile.level || getLevelFromXp(profile.xp || 0),
+    };
+  }
+
+  let nextStreak = 1;
+
+  if (profile.last_active_date === yesterday) {
+    nextStreak = (profile.streak ?? 0) + 1;
+  }
+
+  const nextBestStreak = Math.max(profile.best_streak ?? 0, nextStreak);
+  const nextLevel = getLevelFromXp(profile.xp ?? 0);
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      streak: nextStreak,
+      best_streak: nextBestStreak,
+      level: nextLevel,
+      last_active_date: today,
+    })
+    .eq("id", userId);
+
+  if (error) {
+    console.error("Error syncing daily profile progress:", error.message);
+    return {
+      ...profile,
+      level: nextLevel,
+    };
+  }
+
+  return {
+    ...profile,
+    streak: nextStreak,
+    best_streak: nextBestStreak,
+    level: nextLevel,
+    last_active_date: today,
+  };
 }
 
 export default function HomePage() {
@@ -688,7 +759,9 @@ export default function HomePage() {
 
       const { data: profileData } = await supabase
         .from("profiles")
-        .select("username, university, course")
+        .select(
+          "username, university, course, xp, level, streak, best_streak, last_active_date, premium"
+        )
         .eq("id", user.id)
         .maybeSingle();
 
@@ -699,7 +772,21 @@ export default function HomePage() {
         return;
       }
 
-      setProfile(profileData);
+      const syncedProfile = await syncDailyProfileProgress(user.id, {
+        username: profileData.username,
+        university: profileData.university,
+        course: profileData.course,
+        xp: profileData.xp ?? 0,
+        level: profileData.level ?? 1,
+        streak: profileData.streak ?? 0,
+        best_streak: profileData.best_streak ?? 0,
+        last_active_date: profileData.last_active_date ?? null,
+        premium: profileData.premium ?? false,
+      });
+
+      if (!mounted) return;
+
+      setProfile(syncedProfile);
       await loadLeaderboard(user.id);
     }
 
@@ -977,6 +1064,11 @@ export default function HomePage() {
     return sortedLeaderboard.find((entry) => entry.isYou)?.rank ?? null;
   }, [sortedLeaderboard]);
 
+  const profileLevel = profile?.level ?? getLevelFromXp(profile?.xp ?? 0);
+  const xpIntoLevel = getXpIntoCurrentLevel(profile?.xp ?? 0);
+  const xpNeededForNextLevel = getXpNeededForNextLevel();
+  const levelProgress = Math.min((xpIntoLevel / xpNeededForNextLevel) * 100, 100);
+
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#020817] text-white">
       <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.16),transparent_28%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.10),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(244,63,94,0.08),transparent_24%)]" />
@@ -1026,14 +1118,36 @@ export default function HomePage() {
                 </p>
 
                 <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                      Active Tasks
+                  <div className="rounded-2xl border border-orange-400/20 bg-orange-500/10 px-4 py-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-orange-200/70">
+                      Daily Streak
                     </p>
-                    <p className="mt-2 text-2xl font-semibold text-white">
-                      {loading ? "..." : stats.pending}
+                    <div className="mt-2 flex items-center gap-2">
+                      <Flame className="h-5 w-5 text-orange-300" />
+                      <p className="text-2xl font-semibold text-white">
+                        {profile ? profile.streak : 0}
+                      </p>
+                    </div>
+                    <p className="mt-2 text-xs text-orange-200/70">
+                      Best: {profile ? profile.best_streak : 0} days
                     </p>
                   </div>
+
+                  <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/70">
+                      Level
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Trophy className="h-5 w-5 text-cyan-300" />
+                      <p className="text-2xl font-semibold text-white">
+                        {profileLevel}
+                      </p>
+                    </div>
+                    <p className="mt-2 text-xs text-cyan-200/70">
+                      {profile?.xp ?? 0} total XP
+                    </p>
+                  </div>
+
                   <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
                     <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
                       Due This Week
@@ -1041,13 +1155,8 @@ export default function HomePage() {
                     <p className="mt-2 text-2xl font-semibold text-white">
                       {loading ? "..." : stats.dueThisWeek}
                     </p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                      Planned Hours
-                    </p>
-                    <p className="mt-2 text-2xl font-semibold text-white">
-                      {stats.studyHours}
+                    <p className="mt-2 text-xs text-slate-500">
+                      {loading ? "..." : `${stats.pending} active tasks`}
                     </p>
                   </div>
                 </div>
@@ -1066,6 +1175,20 @@ export default function HomePage() {
                   >
                     <CalendarDays className="h-4 w-4" />
                     Open Planner
+                  </Link>
+                  <Link
+                    href="/analytics"
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-6 py-3 text-sm font-medium text-cyan-200 transition hover:border-cyan-400 hover:bg-cyan-500/20"
+                  >
+                    <TrendingUp className="h-4 w-4" />
+                    Analytics
+                  </Link>
+                  <Link
+                    href="/badges"
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-6 py-3 text-sm font-medium text-amber-200 transition hover:border-amber-400 hover:bg-amber-500/20"
+                  >
+                    <Medal className="h-4 w-4" />
+                    Badges
                   </Link>
                   <Link
                     href="/degree-tracker"
@@ -1138,6 +1261,29 @@ export default function HomePage() {
                     {loading ? "Loading your dashboard..." : getHeroSubtitle(cooked.score)}
                   </p>
 
+                  <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                          Level Progress
+                        </p>
+                        <p className="mt-2 text-lg font-semibold text-white">
+                          Level {profileLevel}
+                        </p>
+                      </div>
+                      <p className="text-sm text-slate-400">
+                        {xpIntoLevel}/{xpNeededForNextLevel} XP
+                      </p>
+                    </div>
+
+                    <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className="h-full rounded-full bg-white transition-all duration-500"
+                        style={{ width: `${Math.max(6, levelProgress)}%` }}
+                      />
+                    </div>
+                  </div>
+
                   <div className="mt-6 grid gap-3 sm:grid-cols-2">
                     <button
                       type="button"
@@ -1167,6 +1313,56 @@ export default function HomePage() {
                   </div>
                 </div>
               </div>
+            </div>
+          </section>
+
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-[24px] border border-orange-400/20 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
+              <div className="flex items-center gap-2 text-sm text-orange-300">
+                <Flame className="h-4 w-4" />
+                Streak
+              </div>
+              <p className="mt-4 text-4xl font-semibold text-white">
+                {profile ? profile.streak : 0}
+              </p>
+              <p className="mt-2 text-sm text-slate-400">
+                Best streak: {profile ? profile.best_streak : 0} days
+              </p>
+            </div>
+
+            <div className="rounded-[24px] border border-cyan-400/20 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
+              <div className="flex items-center gap-2 text-sm text-cyan-300">
+                <Trophy className="h-4 w-4" />
+                XP & Level
+              </div>
+              <p className="mt-4 text-4xl font-semibold text-white">{profileLevel}</p>
+              <p className="mt-2 text-sm text-slate-400">{profile?.xp ?? 0} XP total</p>
+            </div>
+
+            <div className="rounded-[24px] border border-emerald-400/20 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
+              <div className="flex items-center gap-2 text-sm text-emerald-300">
+                <Shield className="h-4 w-4" />
+                Completion
+              </div>
+              <p className="mt-4 text-4xl font-semibold text-white">
+                {loading ? "..." : `${stats.completionRate}%`}
+              </p>
+              <p className="mt-2 text-sm text-slate-400">
+                {loading ? "..." : `${stats.completed} completed tasks`}
+              </p>
+            </div>
+
+            <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
+              <div className="flex items-center gap-2 text-sm text-slate-300">
+                <CalendarDays className="h-4 w-4" />
+                Study Plan
+              </div>
+              <p className="mt-4 text-4xl font-semibold text-white">
+                {loading ? "..." : stats.studyHours}
+              </p>
+              <p className="mt-2 text-sm text-slate-400">
+                {loading ? "..." : `${stats.completedStudyBlocks} blocks done`}
+              </p>
             </div>
           </section>
 
@@ -1743,8 +1939,28 @@ export default function HomePage() {
                 </Link>
 
                 <Link
+                  href="/analytics"
+                  className="rounded-2xl border border-cyan-400/20 bg-[linear-gradient(135deg,rgba(34,211,238,0.18),rgba(15,23,42,0.95))] p-5 transition hover:border-cyan-400 hover:bg-[linear-gradient(135deg,rgba(34,211,238,0.24),rgba(15,23,42,1))]"
+                >
+                  <p className="text-lg font-medium text-white">Analytics</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    View cooked score history, completed tasks, and study hours.
+                  </p>
+                </Link>
+
+                <Link
+                  href="/badges"
+                  className="rounded-2xl border border-amber-400/20 bg-[linear-gradient(135deg,rgba(251,191,36,0.18),rgba(15,23,42,0.95))] p-5 transition hover:border-amber-400 hover:bg-[linear-gradient(135deg,rgba(251,191,36,0.24),rgba(15,23,42,1))]"
+                >
+                  <p className="text-lg font-medium text-white">Badges</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    Track your milestones, streaks, and progress achievements.
+                  </p>
+                </Link>
+
+                <Link
                   href="/degree-tracker"
-                  className="group relative overflow-hidden rounded-2xl border border-blue-400/20 bg-[linear-gradient(135deg,rgba(59,130,246,0.18),rgba(15,23,42,0.95))] p-5 transition hover:border-blue-400 hover:bg-[linear-gradient(135deg,rgba(59,130,246,0.24),rgba(15,23,42,1))]"
+                  className="group relative overflow-hidden rounded-2xl border border-blue-400/20 bg-[linear-gradient(135deg,rgba(59,130,246,0.18),rgba(15,23,42,0.95))] p-5 transition hover:border-blue-400 hover:bg-[linear-gradient(135deg,rgba(59,130,246,0.24),rgba(15,23,42,1))] md:col-span-2"
                 >
                   <div className="absolute right-0 top-0 h-24 w-24 rounded-full bg-blue-400/10 blur-2xl transition group-hover:bg-blue-400/20" />
                   <div className="relative">
