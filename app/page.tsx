@@ -665,10 +665,14 @@ export default function HomePage() {
       safeParseArray<StudyBlock>(localStorage.getItem(STUDY_PLAN_STORAGE_KEY))
     );
 
+    let mounted = true;
+
     async function checkAuthAndProfile() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
+
+      if (!mounted) return;
 
       const user = session?.user ?? null;
 
@@ -687,6 +691,8 @@ export default function HomePage() {
         .select("username, university, course")
         .eq("id", user.id)
         .maybeSingle();
+
+      if (!mounted) return;
 
       if (!profileData) {
         router.push("/onboarding");
@@ -701,7 +707,9 @@ export default function HomePage() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+
       const user = session?.user ?? null;
       setIsLoggedIn(!!user);
       setCurrentUserId(user?.id ?? null);
@@ -713,19 +721,7 @@ export default function HomePage() {
         return;
       }
 
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("username, university, course")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (!profileData) {
-        router.push("/onboarding");
-        return;
-      }
-
-      setProfile(profileData);
-      await loadLeaderboard(user.id);
+      void checkAuthAndProfile();
     });
 
     const handleVisibilityChange = () => {
@@ -734,11 +730,12 @@ export default function HomePage() {
       }
     };
 
-    window.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
-      window.removeEventListener("visibilitychange", handleVisibilityChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [router]);
 

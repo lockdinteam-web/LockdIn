@@ -37,13 +37,15 @@ const TasksContext = createContext<TasksContextType>({
 export function TasksProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sessionChecked, setSessionChecked] = useState(false);
+
   const mountedRef = useRef(true);
+  const refreshingRef = useRef(false);
 
   const refreshTasks = async () => {
-    try {
-      if (!mountedRef.current) return;
+    if (!mountedRef.current || refreshingRef.current) return;
 
+    try {
+      refreshingRef.current = true;
       setLoading(true);
 
       const {
@@ -51,22 +53,20 @@ export function TasksProvider({ children }: { children: ReactNode }) {
         error: sessionError,
       } = await supabase.auth.getSession();
 
+      if (!mountedRef.current) return;
+
       if (sessionError) {
         console.error("Error getting session:", sessionError.message);
-        if (!mountedRef.current) return;
         setTasks([]);
         setLoading(false);
-        setSessionChecked(true);
         return;
       }
 
       const user = session?.user ?? null;
 
       if (!user) {
-        if (!mountedRef.current) return;
         setTasks([]);
         setLoading(false);
-        setSessionChecked(true);
         return;
       }
 
@@ -82,19 +82,18 @@ export function TasksProvider({ children }: { children: ReactNode }) {
         console.error("Error fetching tasks:", error.message);
         setTasks([]);
         setLoading(false);
-        setSessionChecked(true);
         return;
       }
 
       setTasks((data as Task[]) ?? []);
       setLoading(false);
-      setSessionChecked(true);
     } catch (error) {
       console.error("Unexpected provider error:", error);
       if (!mountedRef.current) return;
       setTasks([]);
       setLoading(false);
-      setSessionChecked(true);
+    } finally {
+      refreshingRef.current = false;
     }
   };
 
@@ -111,7 +110,6 @@ export function TasksProvider({ children }: { children: ReactNode }) {
       if (!session?.user) {
         setTasks([]);
         setLoading(false);
-        setSessionChecked(true);
         return;
       }
 
@@ -119,19 +117,19 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     });
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && sessionChecked) {
+      if (document.visibilityState === "visible") {
         void refreshTasks();
       }
     };
 
-    window.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       mountedRef.current = false;
       subscription.unsubscribe();
-      window.removeEventListener("visibilitychange", handleVisibilityChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [sessionChecked]);
+  }, []);
 
   return (
     <TasksContext.Provider value={{ tasks, loading, refreshTasks }}>
