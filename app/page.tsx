@@ -23,10 +23,44 @@ type HomeTask = {
   completed: boolean;
 };
 
+type DatabaseTask = {
+  id: string;
+  user_id: string;
+  title: string;
+  module: string;
+  due_date: string;
+  priority: Priority;
+  completed: boolean;
+};
+
 type HomeProfile = {
   username: string;
   university: string;
   course: string;
+};
+
+type LeaderboardProfile = {
+  id: string;
+  username: string;
+  university: string;
+  course: string;
+};
+
+type FriendConnection = {
+  user_id: string;
+  friend_id: string;
+};
+
+type LeaderboardEntry = {
+  id: string;
+  username: string;
+  university: string;
+  course: string;
+  cookedScore: number;
+  status: string;
+  pendingTasks: number;
+  rank: number;
+  isYou: boolean;
 };
 
 const STUDY_PLAN_STORAGE_KEY = "lockdin_study_plan";
@@ -135,12 +169,214 @@ function getHeroSubtitle(score: number) {
   return "You’re looking suspiciously organised.";
 }
 
+function mapDatabaseTask(task: DatabaseTask): HomeTask {
+  return {
+    id: task.id,
+    title: task.title,
+    module: task.module,
+    dueDate: task.due_date,
+    priority: task.priority,
+    completed: task.completed,
+  };
+}
+
+function getLeaderboardAccent(score: number) {
+  if (score >= 85) return "border-rose-400/30 bg-rose-500/10";
+  if (score >= 65) return "border-orange-400/30 bg-orange-500/10";
+  if (score >= 40) return "border-amber-400/30 bg-amber-500/10";
+  return "border-emerald-400/30 bg-emerald-500/10";
+}
+
 export default function HomePage() {
   const router = useRouter();
   const { tasks: providerTasks, loading } = useTasks();
+
   const [studyBlocks, setStudyBlocks] = useState<StudyBlock[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [profile, setProfile] = useState<HomeProfile | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(true);
+  const [friendUsername, setFriendUsername] = useState("");
+  const [addingFriend, setAddingFriend] = useState(false);
+  const [friendError, setFriendError] = useState("");
+  const [friendSuccess, setFriendSuccess] = useState("");
+
+  async function loadLeaderboard(userId: string) {
+    try {
+      setLeaderboardLoading(true);
+
+      const { data: connectionRows, error: connectionError } = await supabase
+        .from("friend_connections")
+        .select("user_id, friend_id")
+        .eq("user_id", userId);
+
+      if (connectionError) {
+        console.error("Error loading friend connections:", connectionError.message);
+        setLeaderboard([]);
+        return;
+      }
+
+      const friendIds =
+        (connectionRows as FriendConnection[] | null)?.map(
+          (row) => row.friend_id
+        ) ?? [];
+
+      const allIds = Array.from(new Set([userId, ...friendIds]));
+
+      const { data: profileRows, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, username, university, course")
+        .in("id", allIds);
+
+      if (profileError) {
+        console.error("Error loading leaderboard profiles:", profileError.message);
+        setLeaderboard([]);
+        return;
+      }
+
+      const { data: taskRows, error: taskError } = await supabase
+        .from("tasks")
+        .select("id, user_id, title, module, due_date, priority, completed")
+        .in("user_id", allIds);
+
+      if (taskError) {
+        console.error("Error loading leaderboard tasks:", taskError.message);
+        setLeaderboard([]);
+        return;
+      }
+
+      const tasksByUser = new Map<string, HomeTask[]>();
+
+      ((taskRows as DatabaseTask[] | null) ?? []).forEach((task) => {
+        const mapped = mapDatabaseTask(task);
+        const existing = tasksByUser.get(task.user_id) ?? [];
+        existing.push(mapped);
+        tasksByUser.set(task.user_id, existing);
+      });
+
+      const entries: LeaderboardEntry[] = (
+        (profileRows as LeaderboardProfile[] | null) ?? []
+      ).map((person) => {
+        const personTasks = tasksByUser.get(person.id) ?? [];
+        const cookedResult = calculateCookedScore(personTasks, []);
+        const pendingTasks = personTasks.filter((task) => !task.completed).length;
+
+        return {
+          id: person.id,
+          username: person.username,
+          university: person.university,
+          course: person.course,
+          cookedScore: cookedResult.score,
+          status: cookedResult.status,
+          pendingTasks,
+          rank: 0,
+          isYou: person.id === userId,
+        };
+      });
+
+      const ranked = entries
+        .sort((a, b) => {
+          if (b.cookedScore !== a.cookedScore) {
+            return b.cookedScore - a.cookedScore;
+          }
+          return b.pendingTasks - a.pendingTasks;
+        })
+        .map((entry, index) => ({
+          ...entry,
+          rank: index + 1,
+        }));
+
+      setLeaderboard(ranked);
+    } catch (error) {
+      console.error("Unexpected leaderboard error:", error);
+      setLeaderboard([]);
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  }
+
+  async function handleAddFriend(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+
+    if (!currentUserId) {
+      setFriendError("You need to be logged in.");
+      return;
+    }
+
+    const cleanUsername = friendUsername.trim().replace(/^@/, "");
+
+    if (!cleanUsername) {
+      setFriendError("Enter a username first.");
+      return;
+    }
+
+    try {
+      setAddingFriend(true);
+      setFriendError("");
+      setFriendSuccess("");
+
+      const { data: foundUser, error: findError } = await supabase
+        .from("profiles")
+        .select("id, username")
+        .eq("username", cleanUsername)
+        .maybeSingle();
+
+      if (findError) {
+        setFriendError("Could not search for that username.");
+        return;
+      }
+
+      if (!foundUser) {
+        setFriendError("No user found with that username.");
+        return;
+      }
+
+      if (foundUser.id === currentUserId) {
+        setFriendError("You cannot add yourself.");
+        return;
+      }
+
+      const { data: existingConnection, error: existingError } = await supabase
+        .from("friend_connections")
+        .select("user_id, friend_id")
+        .eq("user_id", currentUserId)
+        .eq("friend_id", foundUser.id)
+        .maybeSingle();
+
+      if (existingError) {
+        setFriendError("Could not check existing connections.");
+        return;
+      }
+
+      if (existingConnection) {
+        setFriendError("That friend is already on your leaderboard.");
+        return;
+      }
+
+      const { error: insertError } = await supabase
+        .from("friend_connections")
+        .insert([
+          { user_id: currentUserId, friend_id: foundUser.id },
+          { user_id: foundUser.id, friend_id: currentUserId },
+        ]);
+
+      if (insertError) {
+        setFriendError("Could not add that friend.");
+        return;
+      }
+
+      setFriendSuccess(`@${foundUser.username} added to your leaderboard.`);
+      setFriendUsername("");
+      await loadLeaderboard(currentUserId);
+    } catch (error) {
+      console.error("Unexpected add friend error:", error);
+      setFriendError("Something went wrong while adding that friend.");
+    } finally {
+      setAddingFriend(false);
+    }
+  }
 
   useEffect(() => {
     setStudyBlocks(
@@ -153,9 +389,12 @@ export default function HomePage() {
       } = await supabase.auth.getUser();
 
       setIsLoggedIn(!!user);
+      setCurrentUserId(user?.id ?? null);
 
       if (!user) {
         setProfile(null);
+        setLeaderboard([]);
+        setLeaderboardLoading(false);
         return;
       }
 
@@ -171,6 +410,7 @@ export default function HomePage() {
       }
 
       setProfile(profileData);
+      await loadLeaderboard(user.id);
     }
 
     checkAuthAndProfile();
@@ -180,9 +420,12 @@ export default function HomePage() {
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const user = session?.user ?? null;
       setIsLoggedIn(!!user);
+      setCurrentUserId(user?.id ?? null);
 
       if (!user) {
         setProfile(null);
+        setLeaderboard([]);
+        setLeaderboardLoading(false);
         return;
       }
 
@@ -198,6 +441,7 @@ export default function HomePage() {
       }
 
       setProfile(profileData);
+      await loadLeaderboard(user.id);
     });
 
     return () => {
@@ -260,8 +504,7 @@ export default function HomePage() {
 
     const studyHours =
       Math.round(
-        (studyBlocks.reduce((sum, block) => sum + block.durationMinutes, 0) /
-          60) *
+        (studyBlocks.reduce((sum, block) => sum + block.durationMinutes, 0) / 60) *
           10
       ) / 10;
 
@@ -994,62 +1237,136 @@ export default function HomePage() {
             </div>
           </section>
 
-          <section className="grid items-start gap-5 xl:grid-cols-[1.2fr_0.8fr] xl:gap-6">
+          <section className="grid items-start gap-5 xl:grid-cols-[1.15fr_0.85fr] xl:gap-6">
             <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
-              <div className="flex items-center justify-between gap-4">
-                <h3 className="text-xl font-semibold sm:text-2xl">Recent Tasks</h3>
-                <Link
-                  href="/tasks"
-                  className="shrink-0 text-sm font-medium text-blue-400 transition hover:text-blue-300"
-                >
-                  View all
-                </Link>
-              </div>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-xl font-semibold sm:text-2xl">
+                    🔥 Cooked Leaderboard
+                  </h3>
+                  <p className="mt-2 text-sm text-slate-400">
+                    Most cooked first. Built for screenshots and flatmate slander.
+                  </p>
+                </div>
 
-              <div className="mt-6 space-y-4">
-                {loading ? (
-                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                    Loading recent tasks...
+                {isLoggedIn && (
+                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
+                    Rank your friends
                   </div>
-                ) : stats.recent.length === 0 ? (
-                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                    No tasks yet. Add your first task to get started.
-                  </div>
-                ) : (
-                  stats.recent.map((task) => (
-                    <div
-                      key={task.id}
-                      className="rounded-2xl border border-white/10 bg-[#101b38] p-4 sm:p-5"
-                    >
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0">
-                          <p
-                            className={`break-words text-base font-medium ${
-                              task.completed
-                                ? "text-slate-500 line-through"
-                                : "text-white"
-                            }`}
-                          >
-                            {task.title}
-                          </p>
-                          <p className="mt-2 text-sm text-slate-400">{task.module}</p>
-                          <p className="mt-2 text-sm text-slate-500">
-                            Due: {task.dueDate}
-                          </p>
-                        </div>
-
-                        <span
-                          className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
-                            task.priority
-                          )}`}
-                        >
-                          {task.priority}
-                        </span>
-                      </div>
-                    </div>
-                  ))
                 )}
               </div>
+
+              {isLoggedIn ? (
+                <>
+                  <form
+                    onSubmit={handleAddFriend}
+                    className="mt-6 grid gap-3 sm:grid-cols-[1fr_auto]"
+                  >
+                    <input
+                      type="text"
+                      value={friendUsername}
+                      onChange={(e) => setFriendUsername(e.target.value)}
+                      placeholder="Add friend by username"
+                      className="rounded-2xl border border-white/10 bg-[#101b38] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
+                    />
+
+                    <button
+                      type="submit"
+                      disabled={addingFriend}
+                      className="rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {addingFriend ? "Adding..." : "Add friend"}
+                    </button>
+                  </form>
+
+                  {friendError ? (
+                    <p className="mt-3 text-sm text-rose-300">{friendError}</p>
+                  ) : null}
+
+                  {friendSuccess ? (
+                    <p className="mt-3 text-sm text-emerald-300">{friendSuccess}</p>
+                  ) : null}
+
+                  <div className="mt-6 space-y-4">
+                    {leaderboardLoading ? (
+                      <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                        Loading leaderboard...
+                      </div>
+                    ) : leaderboard.length === 0 ? (
+                      <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                        No one on the leaderboard yet. Add a friend by username to
+                        start the chaos.
+                      </div>
+                    ) : (
+                      leaderboard.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className={`rounded-2xl border p-4 sm:p-5 ${getLeaderboardAccent(
+                            entry.cookedScore
+                          )} ${entry.isYou ? "ring-1 ring-blue-400/30" : ""}`}
+                        >
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                  #{entry.rank}
+                                </span>
+
+                                <p className="text-base font-semibold text-white break-words">
+                                  @{entry.username}
+                                </p>
+
+                                {entry.isYou ? (
+                                  <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs text-blue-200">
+                                    You
+                                  </span>
+                                ) : null}
+                              </div>
+
+                              <p className="mt-2 text-sm text-slate-400">
+                                {entry.course} • {entry.university}
+                              </p>
+
+                              <p className="mt-2 text-sm text-slate-300">
+                                {entry.pendingTasks} active task
+                                {entry.pendingTasks === 1 ? "" : "s"} • {entry.status}
+                              </p>
+                            </div>
+
+                            <div className="text-left sm:text-right">
+                              <p
+                                className={`text-3xl font-semibold sm:text-4xl ${getCookedTextColor(
+                                  entry.cookedScore
+                                )}`}
+                              >
+                                {entry.cookedScore}
+                              </p>
+                              <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
+                                cooked score
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-black/20">
+                            <div
+                              className={`h-full rounded-full ${getCookedBarClass(
+                                entry.cookedScore
+                              )}`}
+                              style={{
+                                width: `${Math.max(6, entry.cookedScore)}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="mt-6 rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                  Log in to start a cooked leaderboard with your friends.
+                </div>
+              )}
             </div>
 
             <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
@@ -1109,6 +1426,95 @@ export default function HomePage() {
                     needed.
                   </div>
                 )}
+              </div>
+            </div>
+          </section>
+
+          <section className="grid items-start gap-5 xl:grid-cols-[1.2fr_0.8fr] xl:gap-6">
+            <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
+              <div className="flex items-center justify-between gap-4">
+                <h3 className="text-xl font-semibold sm:text-2xl">Recent Tasks</h3>
+                <Link
+                  href="/tasks"
+                  className="shrink-0 text-sm font-medium text-blue-400 transition hover:text-blue-300"
+                >
+                  View all
+                </Link>
+              </div>
+
+              <div className="mt-6 space-y-4">
+                {loading ? (
+                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                    Loading recent tasks...
+                  </div>
+                ) : stats.recent.length === 0 ? (
+                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                    No tasks yet. Add your first task to get started.
+                  </div>
+                ) : (
+                  stats.recent.map((task) => (
+                    <div
+                      key={task.id}
+                      className="rounded-2xl border border-white/10 bg-[#101b38] p-4 sm:p-5"
+                    >
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p
+                            className={`break-words text-base font-medium ${
+                              task.completed
+                                ? "text-slate-500 line-through"
+                                : "text-white"
+                            }`}
+                          >
+                            {task.title}
+                          </p>
+                          <p className="mt-2 text-sm text-slate-400">{task.module}</p>
+                          <p className="mt-2 text-sm text-slate-500">
+                            Due: {task.dueDate}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
+                            task.priority
+                          )}`}
+                        >
+                          {task.priority}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
+              <h3 className="text-xl font-semibold sm:text-2xl">Leaderboard Notes</h3>
+
+              <div className="mt-6 space-y-4">
+                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
+                  <p className="text-sm text-slate-400">How it ranks</p>
+                  <p className="mt-2 text-sm leading-7 text-slate-200">
+                    Players are ranked by highest cooked score first. If two people
+                    have the same score, the one with more active tasks ranks higher.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
+                  <p className="text-sm text-slate-400">Best use</p>
+                  <p className="mt-2 text-sm leading-7 text-slate-200">
+                    Add your flatmates, course mates, or friends and compare who is
+                    most cooked this week.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
+                  <p className="text-sm text-slate-400">Next upgrade</p>
+                  <p className="mt-2 text-sm leading-7 text-slate-200">
+                    Later you can add weekly winners, streaks, and biggest recovery
+                    drops.
+                  </p>
+                </div>
               </div>
             </div>
           </section>
