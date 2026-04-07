@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useTasks } from "@/components/TasksProvider";
 import { supabase } from "@/lib/supabase";
@@ -346,18 +346,24 @@ export default function HomePage() {
       const { data: connectionRows, error: connectionError } = await supabase
         .from("friend_connections")
         .select("user_id, friend_id")
-        .eq("user_id", userId);
+        .or(`user_id.eq.${userId},friend_id.eq.${userId}`);
 
       if (connectionError) {
-        console.error("Error loading friend connections:", connectionError.message);
+        console.error(
+          "Error loading friend connections:",
+          connectionError.message
+        );
         setLeaderboard([]);
         return;
       }
 
-      const friendIds =
-        (connectionRows as FriendConnection[] | null)?.map(
-          (row) => row.friend_id
-        ) ?? [];
+      const friendIds = Array.from(
+        new Set(
+          ((connectionRows as FriendConnection[] | null) ?? []).map((row) =>
+            row.user_id === userId ? row.friend_id : row.user_id
+          )
+        )
+      );
 
       const allIds = Array.from(new Set([userId, ...friendIds]));
 
@@ -367,7 +373,10 @@ export default function HomePage() {
         .in("id", allIds);
 
       if (profileError) {
-        console.error("Error loading leaderboard profiles:", profileError.message);
+        console.error(
+          "Error loading leaderboard profiles:",
+          profileError.message
+        );
         setLeaderboard([]);
         return;
       }
@@ -392,7 +401,10 @@ export default function HomePage() {
         .gte("snapshot_date", getDateDaysAgo(7));
 
       if (snapshotError) {
-        console.error("Error loading leaderboard snapshots:", snapshotError.message);
+        console.error(
+          "Error loading leaderboard snapshots:",
+          snapshotError.message
+        );
         setLeaderboard([]);
         return;
       }
@@ -496,7 +508,7 @@ export default function HomePage() {
     }
   }
 
-  async function handleAddFriend(e: React.FormEvent<HTMLFormElement>) {
+  async function handleAddFriend(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
     if (!currentUserId) {
@@ -519,11 +531,12 @@ export default function HomePage() {
       const { data: foundUser, error: findError } = await supabase
         .from("profiles")
         .select("id, username")
-        .eq("username", cleanUsername)
+        .ilike("username", cleanUsername)
         .maybeSingle();
 
       if (findError) {
-        setFriendError("Could not search for that username.");
+        console.error("Could not search for username:", findError);
+        setFriendError(findError.message || "Could not search for that username.");
         return;
       }
 
@@ -540,12 +553,16 @@ export default function HomePage() {
       const { data: existingConnection, error: existingError } = await supabase
         .from("friend_connections")
         .select("user_id, friend_id")
-        .eq("user_id", currentUserId)
-        .eq("friend_id", foundUser.id)
+        .or(
+          `and(user_id.eq.${currentUserId},friend_id.eq.${foundUser.id}),and(user_id.eq.${foundUser.id},friend_id.eq.${currentUserId})`
+        )
         .maybeSingle();
 
       if (existingError) {
-        setFriendError("Could not check existing connections.");
+        console.error("Could not check existing connections:", existingError);
+        setFriendError(
+          existingError.message || "Could not check existing connections."
+        );
         return;
       }
 
@@ -556,13 +573,14 @@ export default function HomePage() {
 
       const { error: insertError } = await supabase
         .from("friend_connections")
-        .insert([
-          { user_id: currentUserId, friend_id: foundUser.id },
-          { user_id: foundUser.id, friend_id: currentUserId },
-        ]);
+        .insert({
+          user_id: currentUserId,
+          friend_id: foundUser.id,
+        });
 
       if (insertError) {
-        setFriendError("Could not add that friend.");
+        console.error("Add friend insert error:", insertError);
+        setFriendError(insertError.message || "Could not add that friend.");
         return;
       }
 
@@ -741,6 +759,11 @@ export default function HomePage() {
     }
 
     syncMySnapshot();
+  }, [currentUserId, tasks, loading]);
+
+  useEffect(() => {
+    if (!currentUserId || loading) return;
+    void loadLeaderboard(currentUserId);
   }, [currentUserId, tasks, loading]);
 
   const stats = useMemo(() => {
@@ -941,6 +964,10 @@ export default function HomePage() {
     }
     return `@${top.username} is carrying the heaviest active workload.`;
   }, [sortedLeaderboard, leaderboardMode]);
+
+  const yourRank = useMemo(() => {
+    return sortedLeaderboard.find((entry) => entry.isYou)?.rank ?? null;
+  }, [sortedLeaderboard]);
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#020817] text-white">
@@ -1149,6 +1176,11 @@ export default function HomePage() {
                   <p className="mt-2 text-sm text-slate-400">
                     {leaderboardHeadline}
                   </p>
+                  {yourRank ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Your current rank: #{yourRank}
+                    </p>
+                  ) : null}
                 </div>
 
                 {isLoggedIn ? (
@@ -1184,6 +1216,10 @@ export default function HomePage() {
                       {addingFriend ? "Adding..." : "Add friend"}
                     </button>
                   </form>
+
+                  <p className="mt-3 text-xs text-slate-500">
+                    Add friends by their LockdIn username. You only need to add them once.
+                  </p>
 
                   {friendError ? (
                     <p className="mt-3 text-sm text-rose-300">{friendError}</p>
