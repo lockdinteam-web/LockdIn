@@ -102,7 +102,9 @@ export function completeTaskInGame(
     };
   });
 
-  const defeatedBoss = next.bosses.find((boss) => boss.taskId === task.id && boss.isComplete);
+  const defeatedBoss = next.bosses.find(
+    (boss) => boss.taskId === task.id && boss.isComplete
+  );
 
   if (defeatedBoss) {
     next.lastShareMoment = createShareMoment({
@@ -153,7 +155,10 @@ export function completeTaskInGame(
     return updatedMission;
   });
 
-  const completedMission = next.missions.find((mission) => mission.status === "completed");
+  const completedMission = next.missions.find(
+    (mission) => mission.status === "completed"
+  );
+
   if (completedMission) {
     next = awardXp(
       next,
@@ -173,7 +178,12 @@ export function completeStudyBlockInGame(
   let next = { ...state };
 
   const xp = getStudyBlockXp(block);
-  next = awardXp(next, xp, `Completed ${block.subject} study block`, "study_block_complete");
+  next = awardXp(
+    next,
+    xp,
+    `Completed ${block.subject} study block`,
+    "study_block_complete"
+  );
 
   next.stats = updateStreak({
     ...next.stats,
