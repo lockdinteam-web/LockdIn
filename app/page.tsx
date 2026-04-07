@@ -51,6 +51,21 @@ type FriendConnection = {
   friend_id: string;
 };
 
+type LeaderboardMode =
+  | "mostCooked"
+  | "biggestComeback"
+  | "mostLockedIn"
+  | "mostActive";
+
+type LeaderboardSnapshot = Record<
+  string,
+  {
+    cookedScore: number;
+    pendingTasks: number;
+    lastSeenAt: string;
+  }
+>;
+
 type LeaderboardEntry = {
   id: string;
   username: string;
@@ -59,11 +74,18 @@ type LeaderboardEntry = {
   cookedScore: number;
   status: string;
   pendingTasks: number;
+  completedTasks: number;
+  completionRate: number;
   rank: number;
   isYou: boolean;
+  changeSinceLastCheck: number;
+  pendingChangeSinceLastCheck: number;
+  momentumLabel: string;
+  roastLabel: string;
 };
 
 const STUDY_PLAN_STORAGE_KEY = "lockdin_study_plan";
+const LEADERBOARD_SNAPSHOT_KEY = "lockdin_leaderboard_snapshot_v1";
 
 function getDaysUntil(dateString: string) {
   const today = new Date();
@@ -83,6 +105,15 @@ function safeParseArray<T>(value: string | null): T[] {
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
+  }
+}
+
+function safeParseObject<T>(value: string | null, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
   }
 }
 
@@ -126,6 +157,24 @@ function getCookedZone(score: number) {
   if (score <= 60) return "Under Pressure";
   if (score <= 80) return "Cooked";
   return "Deep Fried";
+}
+
+function getRoastLabel(score: number) {
+  if (score <= 15) return "Academic Weapon";
+  if (score <= 30) return "Suspiciously Organised";
+  if (score <= 45) return "Still Calm";
+  if (score <= 60) return "Pressure Building";
+  if (score <= 75) return "Slightly Fried";
+  if (score <= 90) return "Properly Cooked";
+  return "Deep Fried";
+}
+
+function getMomentumLabel(completionRate: number, pendingTasks: number) {
+  if (pendingTasks === 0) return "Board Clear";
+  if (completionRate >= 80) return "Flying";
+  if (completionRate >= 60) return "Good Momentum";
+  if (completionRate >= 35) return "In Motion";
+  return "Needs Locking In";
 }
 
 function getUpcomingLabel(days: number) {
@@ -187,6 +236,38 @@ function getLeaderboardAccent(score: number) {
   return "border-emerald-400/30 bg-emerald-500/10";
 }
 
+function getDeltaPill(delta: number) {
+  if (delta < 0) {
+    return {
+      text: `${delta}`,
+      className:
+        "border-emerald-400/20 bg-emerald-500/10 text-emerald-300",
+      label: "Recovered",
+    };
+  }
+  if (delta > 0) {
+    return {
+      text: `+${delta}`,
+      className: "border-rose-400/20 bg-rose-500/10 text-rose-300",
+      label: "More cooked",
+    };
+  }
+  return {
+    text: "0",
+    className: "border-white/10 bg-white/5 text-slate-300",
+    label: "No change",
+  };
+}
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function HomePage() {
   const router = useRouter();
   const { tasks: providerTasks, loading } = useTasks();
@@ -198,14 +279,24 @@ export default function HomePage() {
 
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(true);
+  const [leaderboardMode, setLeaderboardMode] =
+    useState<LeaderboardMode>("mostCooked");
+
   const [friendUsername, setFriendUsername] = useState("");
   const [addingFriend, setAddingFriend] = useState(false);
   const [friendError, setFriendError] = useState("");
   const [friendSuccess, setFriendSuccess] = useState("");
 
+  const [shareMessage, setShareMessage] = useState("");
+
   async function loadLeaderboard(userId: string) {
     try {
       setLeaderboardLoading(true);
+
+      const previousSnapshot = safeParseObject<LeaderboardSnapshot>(
+        localStorage.getItem(LEADERBOARD_SNAPSHOT_KEY),
+        {}
+      );
 
       const { data: connectionRows, error: connectionError } = await supabase
         .from("friend_connections")
@@ -262,6 +353,20 @@ export default function HomePage() {
         const personTasks = tasksByUser.get(person.id) ?? [];
         const cookedResult = calculateCookedScore(personTasks, []);
         const pendingTasks = personTasks.filter((task) => !task.completed).length;
+        const completedTasks = personTasks.filter((task) => task.completed).length;
+        const completionRate =
+          personTasks.length > 0
+            ? Math.round((completedTasks / personTasks.length) * 100)
+            : 0;
+
+        const oldSnapshot = previousSnapshot[person.id];
+        const changeSinceLastCheck = oldSnapshot
+          ? cookedResult.score - oldSnapshot.cookedScore
+          : 0;
+
+        const pendingChangeSinceLastCheck = oldSnapshot
+          ? pendingTasks - oldSnapshot.pendingTasks
+          : 0;
 
         return {
           id: person.id,
@@ -271,24 +376,28 @@ export default function HomePage() {
           cookedScore: cookedResult.score,
           status: cookedResult.status,
           pendingTasks,
+          completedTasks,
+          completionRate,
           rank: 0,
           isYou: person.id === userId,
+          changeSinceLastCheck,
+          pendingChangeSinceLastCheck,
+          momentumLabel: getMomentumLabel(completionRate, pendingTasks),
+          roastLabel: getRoastLabel(cookedResult.score),
         };
       });
 
-      const ranked = entries
-        .sort((a, b) => {
-          if (b.cookedScore !== a.cookedScore) {
-            return b.cookedScore - a.cookedScore;
-          }
-          return b.pendingTasks - a.pendingTasks;
-        })
-        .map((entry, index) => ({
-          ...entry,
-          rank: index + 1,
-        }));
+      const newSnapshot: LeaderboardSnapshot = {};
+      entries.forEach((entry) => {
+        newSnapshot[entry.id] = {
+          cookedScore: entry.cookedScore,
+          pendingTasks: entry.pendingTasks,
+          lastSeenAt: new Date().toISOString(),
+        };
+      });
 
-      setLeaderboard(ranked);
+      localStorage.setItem(LEADERBOARD_SNAPSHOT_KEY, JSON.stringify(newSnapshot));
+      setLeaderboard(entries);
     } catch (error) {
       console.error("Unexpected leaderboard error:", error);
       setLeaderboard([]);
@@ -376,6 +485,72 @@ export default function HomePage() {
     } finally {
       setAddingFriend(false);
     }
+  }
+
+  async function handleCopyInvite() {
+    if (!profile?.username) return;
+
+    const inviteLink =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/signup?invite=${profile.username}`
+        : `Invite me to LockdIn — username: @${profile.username}`;
+
+    const ok = await copyText(inviteLink);
+    setShareMessage(ok ? "Invite link copied." : "Could not copy invite link.");
+    setTimeout(() => setShareMessage(""), 2500);
+  }
+
+  async function handleShareScore(score: number) {
+    const text = `My LockdIn Cooked Score is ${score}/100 (${getRoastLabel(
+      score
+    )}). How cooked are you?`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "LockdIn Cooked Score",
+          text,
+        });
+        setShareMessage("Score shared.");
+      } catch {
+        const ok = await copyText(text);
+        setShareMessage(ok ? "Score copied." : "Could not share score.");
+      }
+    } else {
+      const ok = await copyText(text);
+      setShareMessage(ok ? "Score copied." : "Could not copy score.");
+    }
+
+    setTimeout(() => setShareMessage(""), 2500);
+  }
+
+  async function handleShareLeaderboard(entries: LeaderboardEntry[]) {
+    const lines = entries.slice(0, 5).map(
+      (entry, index) =>
+        `${index + 1}. @${entry.username} — ${entry.cookedScore}/100`
+    );
+
+    const text = `🔥 LockdIn Cooked Leaderboard\n${lines.join(
+      "\n"
+    )}\n\nHow cooked are you?`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "LockdIn Cooked Leaderboard",
+          text,
+        });
+        setShareMessage("Leaderboard shared.");
+      } catch {
+        const ok = await copyText(text);
+        setShareMessage(ok ? "Leaderboard copied." : "Could not share leaderboard.");
+      }
+    } else {
+      const ok = await copyText(text);
+      setShareMessage(ok ? "Leaderboard copied." : "Could not copy leaderboard.");
+    }
+
+    setTimeout(() => setShareMessage(""), 2500);
   }
 
   useEffect(() => {
@@ -551,24 +726,24 @@ export default function HomePage() {
           (aDays < 0
             ? 100
             : aDays === 0
-              ? 80
-              : aDays === 1
-                ? 65
-                : aDays <= 3
-                  ? 45
-                  : 20) +
+            ? 80
+            : aDays === 1
+            ? 65
+            : aDays <= 3
+            ? 45
+            : 20) +
           (a.priority === "High" ? 25 : a.priority === "Medium" ? 15 : 8);
 
         const bScore =
           (bDays < 0
             ? 100
             : bDays === 0
-              ? 80
-              : bDays === 1
-                ? 65
-                : bDays <= 3
-                  ? 45
-                  : 20) +
+            ? 80
+            : bDays === 1
+            ? 65
+            : bDays <= 3
+            ? 45
+            : 20) +
           (b.priority === "High" ? 25 : b.priority === "Medium" ? 15 : 8);
 
         return bScore - aScore;
@@ -586,24 +761,24 @@ export default function HomePage() {
           (aDays < 0
             ? 100
             : aDays === 0
-              ? 90
-              : aDays === 1
-                ? 75
-                : aDays <= 3
-                  ? 55
-                  : 20) +
+            ? 90
+            : aDays === 1
+            ? 75
+            : aDays <= 3
+            ? 55
+            : 20) +
           (a.priority === "High" ? 30 : a.priority === "Medium" ? 18 : 8);
 
         const bValue =
           (bDays < 0
             ? 100
             : bDays === 0
-              ? 90
-              : bDays === 1
-                ? 75
-                : bDays <= 3
-                  ? 55
-                  : 20) +
+            ? 90
+            : bDays === 1
+            ? 75
+            : bDays <= 3
+            ? 55
+            : 20) +
           (b.priority === "High" ? 30 : b.priority === "Medium" ? 18 : 8);
 
         return bValue - aValue;
@@ -615,10 +790,10 @@ export default function HomePage() {
     stats.overdue > 0
       ? "Clear overdue work before anything else"
       : stats.highPriority > 0
-        ? "High-priority work needs your focus"
-        : stats.pending > 0
-          ? "Your edge comes from finishing, not adding more"
-          : "You’re in a strong position right now";
+      ? "High-priority work needs your focus"
+      : stats.pending > 0
+      ? "Your edge comes from finishing, not adding more"
+      : "You’re in a strong position right now";
 
   const coachMessage =
     stats.overdue > 0
@@ -626,14 +801,74 @@ export default function HomePage() {
           stats.overdue === 1 ? "" : "s"
         }. That is the main thing dragging your score up right now.`
       : stats.highPriority > 0
-        ? `You still have ${stats.highPriority} high-priority task${
-            stats.highPriority === 1 ? "" : "s"
-          } open. Finishing one of those will shift things fastest.`
-        : stats.pending > 0
-          ? `You have ${stats.pending} active task${
-              stats.pending === 1 ? "" : "s"
-            } in motion. Protect momentum by finishing what is already open.`
-          : "No current backlog. Best move now is staying ahead before pressure builds again.";
+      ? `You still have ${stats.highPriority} high-priority task${
+          stats.highPriority === 1 ? "" : "s"
+        } open. Finishing one of those will shift things fastest.`
+      : stats.pending > 0
+      ? `You have ${stats.pending} active task${
+          stats.pending === 1 ? "" : "s"
+        } in motion. Protect momentum by finishing what is already open.`
+      : "No current backlog. Best move now is staying ahead before pressure builds again.";
+
+  const sortedLeaderboard = useMemo(() => {
+    const cloned = [...leaderboard];
+
+    if (leaderboardMode === "mostCooked") {
+      return cloned
+        .sort((a, b) => {
+          if (b.cookedScore !== a.cookedScore) return b.cookedScore - a.cookedScore;
+          return b.pendingTasks - a.pendingTasks;
+        })
+        .map((entry, index) => ({ ...entry, rank: index + 1 }));
+    }
+
+    if (leaderboardMode === "biggestComeback") {
+      return cloned
+        .sort((a, b) => {
+          if (a.changeSinceLastCheck !== b.changeSinceLastCheck) {
+            return a.changeSinceLastCheck - b.changeSinceLastCheck;
+          }
+          return a.cookedScore - b.cookedScore;
+        })
+        .map((entry, index) => ({ ...entry, rank: index + 1 }));
+    }
+
+    if (leaderboardMode === "mostLockedIn") {
+      return cloned
+        .sort((a, b) => {
+          if (a.cookedScore !== b.cookedScore) return a.cookedScore - b.cookedScore;
+          return b.completionRate - a.completionRate;
+        })
+        .map((entry, index) => ({ ...entry, rank: index + 1 }));
+    }
+
+    return cloned
+      .sort((a, b) => {
+        if (b.pendingTasks !== a.pendingTasks) return b.pendingTasks - a.pendingTasks;
+        return b.cookedScore - a.cookedScore;
+      })
+      .map((entry, index) => ({ ...entry, rank: index + 1 }));
+  }, [leaderboard, leaderboardMode]);
+
+  const leaderboardHeadline = useMemo(() => {
+    if (!sortedLeaderboard.length) return "No rankings yet";
+
+    const top = sortedLeaderboard[0];
+
+    if (leaderboardMode === "mostCooked") {
+      return `@${top.username} is currently the most cooked.`;
+    }
+    if (leaderboardMode === "biggestComeback") {
+      if (top.changeSinceLastCheck < 0) {
+        return `@${top.username} has made the best comeback since the last check.`;
+      }
+      return `Nobody has recovered yet. Chaos remains unchanged.`;
+    }
+    if (leaderboardMode === "mostLockedIn") {
+      return `@${top.username} is currently the least cooked.`;
+    }
+    return `@${top.username} is carrying the heaviest active workload.`;
+  }, [sortedLeaderboard, leaderboardMode]);
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#020817] text-white">
@@ -725,6 +960,12 @@ export default function HomePage() {
                     Open degree tracker
                   </Link>
                 </div>
+
+                {shareMessage ? (
+                  <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+                    {shareMessage}
+                  </div>
+                ) : null}
               </div>
 
               <div className="relative">
@@ -757,6 +998,9 @@ export default function HomePage() {
                           <p className="mt-2 text-sm font-medium text-white">
                             {loading ? "Loading..." : getCookedZone(cooked.score)}
                           </p>
+                          <p className="mt-2 text-xs uppercase tracking-[0.2em] text-slate-500">
+                            {loading ? "..." : getRoastLabel(cooked.score)}
+                          </p>
                         </div>
 
                         <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-right">
@@ -783,6 +1027,23 @@ export default function HomePage() {
                       <p className="mt-4 text-sm leading-6 text-slate-300">
                         {loading ? "Loading your dashboard..." : getHeroSubtitle(cooked.score)}
                       </p>
+
+                      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => handleShareScore(cooked.score)}
+                          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                        >
+                          Share my score
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCopyInvite}
+                          className="rounded-2xl border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-sm font-medium text-blue-200 transition hover:border-blue-400 hover:bg-blue-500/20"
+                        >
+                          Copy invite link
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-2">
@@ -794,8 +1055,8 @@ export default function HomePage() {
                           {loading
                             ? "Loading..."
                             : bestRecoveryAction
-                              ? bestRecoveryAction.label
-                              : "You’re currently clear"}
+                            ? bestRecoveryAction.label
+                            : "You’re currently clear"}
                         </p>
                       </div>
 
@@ -807,10 +1068,10 @@ export default function HomePage() {
                           {loading
                             ? "Loading..."
                             : stats.completionRate >= 80
-                              ? "Strong"
-                              : stats.completionRate >= 50
-                                ? "Building"
-                                : "Needs work"}
+                            ? "Strong"
+                            : stats.completionRate >= 50
+                            ? "Building"
+                            : "Needs work"}
                         </p>
                       </div>
                     </div>
@@ -886,6 +1147,10 @@ export default function HomePage() {
 
                   <p className="mt-3 text-lg font-medium text-white">
                     Status: {loading ? "Loading..." : cooked.status}
+                  </p>
+
+                  <p className="mt-2 text-sm uppercase tracking-[0.2em] text-slate-500">
+                    {loading ? "..." : getRoastLabel(cooked.score)}
                   </p>
 
                   <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base sm:leading-8">
@@ -1054,12 +1319,12 @@ export default function HomePage() {
                     {loading
                       ? "Loading recommendation..."
                       : stats.overdue > 0
-                        ? "Open Tasks and complete the most overdue item first."
-                        : stats.highPriority > 0
-                          ? "Finish your next high-priority task before switching context."
-                          : stats.pending > 0
-                            ? "Use Planner to assign focused time to your remaining workload."
-                            : "Use Planner to map out your next study block while you’re ahead."}
+                      ? "Open Tasks and complete the most overdue item first."
+                      : stats.highPriority > 0
+                      ? "Finish your next high-priority task before switching context."
+                      : stats.pending > 0
+                      ? "Use Planner to assign focused time to your remaining workload."
+                      : "Use Planner to map out your next study block while you’re ahead."}
                   </p>
                 </div>
               </div>
@@ -1239,21 +1504,25 @@ export default function HomePage() {
 
           <section className="grid items-start gap-5 xl:grid-cols-[1.15fr_0.85fr] xl:gap-6">
             <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:rounded-[28px] sm:p-8">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h3 className="text-xl font-semibold sm:text-2xl">
                     🔥 Cooked Leaderboard
                   </h3>
                   <p className="mt-2 text-sm text-slate-400">
-                    Most cooked first. Built for screenshots and flatmate slander.
+                    {leaderboardHeadline}
                   </p>
                 </div>
 
-                {isLoggedIn && (
-                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
-                    Rank your friends
-                  </div>
-                )}
+                {isLoggedIn ? (
+                  <button
+                    type="button"
+                    onClick={() => handleShareLeaderboard(sortedLeaderboard)}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                  >
+                    Share leaderboard
+                  </button>
+                ) : null}
               </div>
 
               {isLoggedIn ? (
@@ -1287,78 +1556,149 @@ export default function HomePage() {
                     <p className="mt-3 text-sm text-emerald-300">{friendSuccess}</p>
                   ) : null}
 
+                  <div className="mt-6 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setLeaderboardMode("mostCooked")}
+                      className={`rounded-full px-4 py-2 text-sm transition ${
+                        leaderboardMode === "mostCooked"
+                          ? "bg-rose-500/15 text-rose-300 ring-1 ring-rose-400/20"
+                          : "bg-white/5 text-slate-300 hover:bg-white/10"
+                      }`}
+                    >
+                      Most Cooked
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLeaderboardMode("biggestComeback")}
+                      className={`rounded-full px-4 py-2 text-sm transition ${
+                        leaderboardMode === "biggestComeback"
+                          ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/20"
+                          : "bg-white/5 text-slate-300 hover:bg-white/10"
+                      }`}
+                    >
+                      Biggest Comeback
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLeaderboardMode("mostLockedIn")}
+                      className={`rounded-full px-4 py-2 text-sm transition ${
+                        leaderboardMode === "mostLockedIn"
+                          ? "bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/20"
+                          : "bg-white/5 text-slate-300 hover:bg-white/10"
+                      }`}
+                    >
+                      Most Locked In
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLeaderboardMode("mostActive")}
+                      className={`rounded-full px-4 py-2 text-sm transition ${
+                        leaderboardMode === "mostActive"
+                          ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/20"
+                          : "bg-white/5 text-slate-300 hover:bg-white/10"
+                      }`}
+                    >
+                      Most Active
+                    </button>
+                  </div>
+
                   <div className="mt-6 space-y-4">
                     {leaderboardLoading ? (
                       <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
                         Loading leaderboard...
                       </div>
-                    ) : leaderboard.length === 0 ? (
+                    ) : sortedLeaderboard.length === 0 ? (
                       <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
                         No one on the leaderboard yet. Add a friend by username to
                         start the chaos.
                       </div>
                     ) : (
-                      leaderboard.map((entry) => (
-                        <div
-                          key={entry.id}
-                          className={`rounded-2xl border p-4 sm:p-5 ${getLeaderboardAccent(
-                            entry.cookedScore
-                          )} ${entry.isYou ? "ring-1 ring-blue-400/30" : ""}`}
-                        >
-                          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                  #{entry.rank}
-                                </span>
+                      sortedLeaderboard.map((entry) => {
+                        const delta = getDeltaPill(entry.changeSinceLastCheck);
 
-                                <p className="text-base font-semibold text-white break-words">
-                                  @{entry.username}
+                        return (
+                          <div
+                            key={entry.id}
+                            className={`rounded-2xl border p-4 sm:p-5 ${getLeaderboardAccent(
+                              entry.cookedScore
+                            )} ${entry.isYou ? "ring-1 ring-blue-400/30" : ""}`}
+                          >
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    #{entry.rank}
+                                  </span>
+
+                                  <p className="break-words text-base font-semibold text-white">
+                                    @{entry.username}
+                                  </p>
+
+                                  {entry.isYou ? (
+                                    <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs text-blue-200">
+                                      You
+                                    </span>
+                                  ) : null}
+
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    {entry.roastLabel}
+                                  </span>
+                                </div>
+
+                                <p className="mt-2 text-sm text-slate-400">
+                                  {entry.course} • {entry.university}
                                 </p>
 
-                                {entry.isYou ? (
-                                  <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs text-blue-200">
-                                    You
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    {entry.pendingTasks} active task
+                                    {entry.pendingTasks === 1 ? "" : "s"}
                                   </span>
-                                ) : null}
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    {entry.completionRate}% completion
+                                  </span>
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    {entry.momentumLabel}
+                                  </span>
+                                  <span
+                                    className={`rounded-full border px-3 py-1 text-xs ${delta.className}`}
+                                  >
+                                    {delta.label}: {delta.text}
+                                  </span>
+                                </div>
                               </div>
 
-                              <p className="mt-2 text-sm text-slate-400">
-                                {entry.course} • {entry.university}
-                              </p>
-
-                              <p className="mt-2 text-sm text-slate-300">
-                                {entry.pendingTasks} active task
-                                {entry.pendingTasks === 1 ? "" : "s"} • {entry.status}
-                              </p>
+                              <div className="text-left sm:text-right">
+                                <p
+                                  className={`text-3xl font-semibold sm:text-4xl ${getCookedTextColor(
+                                    entry.cookedScore
+                                  )}`}
+                                >
+                                  {entry.cookedScore}
+                                </p>
+                                <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
+                                  cooked score
+                                </p>
+                                <p className="mt-2 text-sm text-slate-300">
+                                  {entry.status}
+                                </p>
+                              </div>
                             </div>
 
-                            <div className="text-left sm:text-right">
-                              <p
-                                className={`text-3xl font-semibold sm:text-4xl ${getCookedTextColor(
+                            <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-black/20">
+                              <div
+                                className={`h-full rounded-full ${getCookedBarClass(
                                   entry.cookedScore
                                 )}`}
-                              >
-                                {entry.cookedScore}
-                              </p>
-                              <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
-                                cooked score
-                              </p>
+                                style={{
+                                  width: `${Math.max(6, entry.cookedScore)}%`,
+                                }}
+                              />
                             </div>
                           </div>
-
-                          <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-black/20">
-                            <div
-                              className={`h-full rounded-full ${getCookedBarClass(
-                                entry.cookedScore
-                              )}`}
-                              style={{
-                                width: `${Math.max(6, entry.cookedScore)}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </>
@@ -1495,8 +1835,16 @@ export default function HomePage() {
                 <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
                   <p className="text-sm text-slate-400">How it ranks</p>
                   <p className="mt-2 text-sm leading-7 text-slate-200">
-                    Players are ranked by highest cooked score first. If two people
-                    have the same score, the one with more active tasks ranks higher.
+                    You can switch between Most Cooked, Biggest Comeback, Most
+                    Locked In, and Most Active.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
+                  <p className="text-sm text-slate-400">Movement tracking</p>
+                  <p className="mt-2 text-sm leading-7 text-slate-200">
+                    Comeback movement is tracked from the last time this browser
+                    loaded the leaderboard.
                   </p>
                 </div>
 
@@ -1505,14 +1853,6 @@ export default function HomePage() {
                   <p className="mt-2 text-sm leading-7 text-slate-200">
                     Add your flatmates, course mates, or friends and compare who is
                     most cooked this week.
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
-                  <p className="text-sm text-slate-400">Next upgrade</p>
-                  <p className="mt-2 text-sm leading-7 text-slate-200">
-                    Later you can add weekly winners, streaks, and biggest recovery
-                    drops.
                   </p>
                 </div>
               </div>
