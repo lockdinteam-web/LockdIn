@@ -4,10 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import {
-  recordActivityDay,
-  upsertTodayLeaderboardSnapshot,
-} from "@/lib/leaderboard";
-import {
   CheckCircle2,
   Circle,
   ClipboardList,
@@ -39,6 +35,101 @@ type DatabaseTask = {
   completed: boolean;
   created_at: string;
 };
+
+function getTodayDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function calculateSimpleCookedScore(tasks: Task[]) {
+  const pendingTasks = tasks.filter((task) => !task.completed);
+  const completedTasks = tasks.filter((task) => task.completed).length;
+
+  let score = 0;
+
+  for (const task of pendingTasks) {
+    const due = new Date(task.dueDate);
+    const today = new Date();
+
+    today.setHours(0, 0, 0, 0);
+    due.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.ceil(
+      (due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    if (diffDays < 0) {
+      score += task.priority === "High" ? 28 : task.priority === "Medium" ? 20 : 14;
+    } else if (diffDays === 0) {
+      score += task.priority === "High" ? 20 : task.priority === "Medium" ? 14 : 10;
+    } else if (diffDays === 1) {
+      score += task.priority === "High" ? 14 : task.priority === "Medium" ? 10 : 7;
+    } else if (diffDays <= 3) {
+      score += task.priority === "High" ? 10 : task.priority === "Medium" ? 7 : 5;
+    } else {
+      score += task.priority === "High" ? 6 : task.priority === "Medium" ? 4 : 2;
+    }
+  }
+
+  score += Math.min(pendingTasks.length * 2, 20);
+
+  if (tasks.length > 0) {
+    const completionRate = completedTasks / tasks.length;
+    if (completionRate >= 0.8) score -= 12;
+    else if (completionRate >= 0.6) score -= 8;
+    else if (completionRate >= 0.4) score -= 4;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+async function recordActivityDayClient(userId: string) {
+  const today = getTodayDate();
+
+  const { error } = await supabase.from("user_activity_days").upsert(
+    {
+      user_id: userId,
+      activity_date: today,
+    },
+    {
+      onConflict: "user_id,activity_date",
+    }
+  );
+
+  if (error) {
+    console.error("Error recording activity day:", error.message);
+  }
+}
+
+async function upsertTodayLeaderboardSnapshotClient(
+  userId: string,
+  tasks: Task[]
+) {
+  const cookedScore = calculateSimpleCookedScore(tasks);
+  const pendingTasks = tasks.filter((task) => !task.completed).length;
+  const completedTasks = tasks.filter((task) => task.completed).length;
+  const completionRate =
+    tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
+
+  const today = getTodayDate();
+
+  const { error } = await supabase.from("leaderboard_snapshots").upsert(
+    {
+      user_id: userId,
+      snapshot_date: today,
+      cooked_score: cookedScore,
+      pending_tasks: pendingTasks,
+      completed_tasks: completedTasks,
+      completion_rate: completionRate,
+    },
+    {
+      onConflict: "user_id,snapshot_date",
+    }
+  );
+
+  if (error) {
+    console.error("Error upserting leaderboard snapshot:", error.message);
+  }
+}
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -89,7 +180,7 @@ export default function TasksPage() {
 
         if (mounted) {
           setTasks(mappedTasks);
-          await upsertTodayLeaderboardSnapshot(user.id, mappedTasks);
+          await upsertTodayLeaderboardSnapshotClient(user.id, mappedTasks);
         }
       } catch (error) {
         console.error("Unexpected error loading tasks:", error);
@@ -153,7 +244,7 @@ export default function TasksPage() {
     const updatedTasks = [newTask, ...tasks];
     setTasks(updatedTasks);
 
-    await upsertTodayLeaderboardSnapshot(user.id, updatedTasks);
+    await upsertTodayLeaderboardSnapshotClient(user.id, updatedTasks);
 
     setTitle("");
     setModule("");
@@ -194,10 +285,10 @@ export default function TasksPage() {
     setTasks(updatedTasks);
 
     if (newCompletedValue) {
-      await recordActivityDay(user.id);
+      await recordActivityDayClient(user.id);
     }
 
-    await upsertTodayLeaderboardSnapshot(user.id, updatedTasks);
+    await upsertTodayLeaderboardSnapshotClient(user.id, updatedTasks);
   }
 
   async function deleteTask(id: string) {
@@ -221,7 +312,7 @@ export default function TasksPage() {
     const updatedTasks = tasks.filter((task) => task.id !== id);
     setTasks(updatedTasks);
 
-    await upsertTodayLeaderboardSnapshot(user.id, updatedTasks);
+    await upsertTodayLeaderboardSnapshotClient(user.id, updatedTasks);
   }
 
   async function handleLogout() {

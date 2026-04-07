@@ -6,7 +6,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTasks } from "@/components/TasksProvider";
 import { supabase } from "@/lib/supabase";
-import { upsertTodayLeaderboardSnapshot } from "@/lib/leaderboard";
 import {
   calculateCookedScore,
   getBestRecoveryAction,
@@ -118,6 +117,10 @@ function getDateDaysAgo(daysAgo: number) {
   const d = new Date();
   d.setDate(d.getDate() - daysAgo);
   return d.toISOString().slice(0, 10);
+}
+
+function getTodayDate() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function calculateStreak(activityDates: string[]) {
@@ -251,6 +254,55 @@ async function copyText(text: string) {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function upsertTodayLeaderboardSnapshotClient(
+  userId: string,
+  tasks: HomeTask[]
+) {
+  const cookedResult = calculateCookedScore(tasks, []);
+  const pendingTasks = tasks.filter((task) => !task.completed).length;
+  const completedTasks = tasks.filter((task) => task.completed).length;
+  const completionRate =
+    tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
+
+  const today = getTodayDate();
+
+  const { error: snapshotError } = await supabase
+    .from("leaderboard_snapshots")
+    .upsert(
+      {
+        user_id: userId,
+        snapshot_date: today,
+        cooked_score: cookedResult.score,
+        pending_tasks: pendingTasks,
+        completed_tasks: completedTasks,
+        completion_rate: completionRate,
+      },
+      {
+        onConflict: "user_id,snapshot_date",
+      }
+    );
+
+  if (snapshotError) {
+    console.error("Error upserting leaderboard snapshot:", snapshotError.message);
+  }
+
+  const { error: activityError } = await supabase
+    .from("user_activity_days")
+    .upsert(
+      {
+        user_id: userId,
+        activity_date: today,
+      },
+      {
+        onConflict: "user_id,activity_date",
+      }
+    );
+
+  if (activityError) {
+    console.error("Error upserting activity day:", activityError.message);
   }
 }
 
@@ -673,7 +725,7 @@ export default function HomePage() {
         completed: task.completed,
       }));
 
-      await upsertTodayLeaderboardSnapshot(currentUserId, leaderboardTasks);
+      await upsertTodayLeaderboardSnapshotClient(currentUserId, leaderboardTasks);
     }
 
     syncMySnapshot();
