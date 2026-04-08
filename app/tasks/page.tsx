@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 import {
+  calculateCookedScore,
+  type StudyBlock,
+} from "@/lib/calculateCookedScore";
+import {
   CheckCircle2,
   Circle,
   ClipboardList,
@@ -53,7 +57,25 @@ type ProfileProgress = {
   last_active_date: string | null;
 };
 
+type DatabaseStudyBlock = {
+  id: string;
+  user_id: string;
+  day: string;
+  time: string;
+  subject: string;
+  focus: string;
+  task_id: string | null;
+  duration_minutes: number;
+  completed: boolean;
+  location: string;
+};
+
+type HomeStudyBlock = StudyBlock & {
+  location?: string;
+};
+
 const XP_REWARD_TASK_COMPLETE = 10;
+const STUDY_PLAN_STORAGE_KEY = "lockdin_study_plan";
 
 function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
@@ -65,46 +87,14 @@ function getYesterdayDate() {
   return d.toISOString().slice(0, 10);
 }
 
-function calculateSimpleCookedScore(tasks: Task[]) {
-  const pendingTasks = tasks.filter((task) => !task.completed);
-  const completedTasks = tasks.filter((task) => task.completed).length;
-
-  let score = 0;
-
-  for (const task of pendingTasks) {
-    const due = new Date(task.dueDate);
-    const today = new Date();
-
-    today.setHours(0, 0, 0, 0);
-    due.setHours(0, 0, 0, 0);
-
-    const diffDays = Math.ceil(
-      (due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
-    if (diffDays < 0) {
-      score += task.priority === "High" ? 28 : task.priority === "Medium" ? 20 : 14;
-    } else if (diffDays === 0) {
-      score += task.priority === "High" ? 20 : task.priority === "Medium" ? 14 : 10;
-    } else if (diffDays === 1) {
-      score += task.priority === "High" ? 14 : task.priority === "Medium" ? 10 : 7;
-    } else if (diffDays <= 3) {
-      score += task.priority === "High" ? 10 : task.priority === "Medium" ? 7 : 5;
-    } else {
-      score += task.priority === "High" ? 6 : task.priority === "Medium" ? 4 : 2;
-    }
+function safeParseArray<T>(value: string | null): T[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
   }
-
-  score += Math.min(pendingTasks.length * 2, 20);
-
-  if (tasks.length > 0) {
-    const completionRate = completedTasks / tasks.length;
-    if (completionRate >= 0.8) score -= 12;
-    else if (completionRate >= 0.6) score -= 8;
-    else if (completionRate >= 0.4) score -= 4;
-  }
-
-  return Math.max(0, Math.min(100, Math.round(score)));
 }
 
 function getLevelFromXp(xp: number) {
@@ -139,9 +129,10 @@ async function recordActivityDayClient(userId: string) {
 
 async function upsertTodayLeaderboardSnapshotClient(
   userId: string,
-  tasks: Task[]
+  tasks: Task[],
+  studyBlocks: HomeStudyBlock[]
 ) {
-  const cookedScore = calculateSimpleCookedScore(tasks);
+  const cooked = calculateCookedScore(tasks, studyBlocks);
   const pendingTasks = tasks.filter((task) => !task.completed).length;
   const completedTasks = tasks.filter((task) => task.completed).length;
   const completionRate =
@@ -153,10 +144,11 @@ async function upsertTodayLeaderboardSnapshotClient(
     {
       user_id: userId,
       snapshot_date: today,
-      cooked_score: cookedScore,
+      cooked_score: cooked.score,
       pending_tasks: pendingTasks,
       completed_tasks: completedTasks,
       completion_rate: completionRate,
+      updated_at: new Date().toISOString(),
     },
     {
       onConflict: "user_id,snapshot_date",
@@ -409,7 +401,10 @@ function getPriorityClasses(priority: Priority) {
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [studyBlocks, setStudyBlocks] = useState<HomeStudyBlock[]>([]);
   const [loading, setLoading] = useState(true);
+  const [studyBlocksLoading, setStudyBlocksLoading] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
   const [module, setModule] = useState("");
@@ -423,12 +418,71 @@ export default function TasksPage() {
 
   const [filter, setFilter] = useState<TaskFilter>("All");
 
+  async function loadStudyBlocks(userId: string) {
+    try {
+      setStudyBlocksLoading(true);
+
+      const { data, error } = await supabase
+        .from("study_plan_blocks")
+        .select("*")
+        .eq("user_id", userId);
+
+      if (error) {
+        console.error("Error loading study blocks:", error.message);
+
+        if (typeof window !== "undefined") {
+          const fallback = safeParseArray<HomeStudyBlock>(
+            localStorage.getItem(STUDY_PLAN_STORAGE_KEY)
+          );
+          setStudyBlocks(fallback);
+        } else {
+          setStudyBlocks([]);
+        }
+        return;
+      }
+
+      const mapped: HomeStudyBlock[] = ((data ?? []) as DatabaseStudyBlock[]).map(
+        (block) => ({
+          id: block.id,
+          day: block.day,
+          time: block.time,
+          subject: block.subject,
+          focus: block.focus,
+          taskId: block.task_id ?? "",
+          durationMinutes: block.duration_minutes,
+          completed: block.completed,
+          location: block.location,
+        })
+      );
+
+      setStudyBlocks(mapped);
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem(STUDY_PLAN_STORAGE_KEY, JSON.stringify(mapped));
+      }
+    } catch (error) {
+      console.error("Unexpected study blocks error:", error);
+      setStudyBlocks([]);
+    } finally {
+      setStudyBlocksLoading(false);
+    }
+  }
+
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      setStudyBlocks(
+        safeParseArray<HomeStudyBlock>(localStorage.getItem(STUDY_PLAN_STORAGE_KEY))
+      );
+    }
+
     let mounted = true;
 
     async function loadTasks() {
       try {
-        if (mounted) setLoading(true);
+        if (mounted) {
+          setLoading(true);
+          setStudyBlocksLoading(true);
+        }
 
         const {
           data: { user },
@@ -438,6 +492,10 @@ export default function TasksPage() {
         if (userError || !user) {
           window.location.href = "/login";
           return;
+        }
+
+        if (mounted) {
+          setCurrentUserId(user.id);
         }
 
         const syncedProfile = await syncDailyProfileProgress(user.id);
@@ -451,11 +509,14 @@ export default function TasksPage() {
 
         await maybeUnlockStreakBadge(user.id, syncedProfile.streak ?? 0);
 
-        const { data, error } = await supabase
-          .from("tasks")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false });
+        const [{ data, error }] = await Promise.all([
+          supabase
+            .from("tasks")
+            .select("*")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false }),
+          loadStudyBlocks(user.id),
+        ]);
 
         if (error) {
           console.error("Error loading tasks:", error.message);
@@ -474,7 +535,6 @@ export default function TasksPage() {
 
         if (mounted) {
           setTasks(mappedTasks);
-          await upsertTodayLeaderboardSnapshotClient(user.id, mappedTasks);
         }
       } catch (error) {
         console.error("Unexpected error loading tasks:", error);
@@ -484,12 +544,21 @@ export default function TasksPage() {
       }
     }
 
-    loadTasks();
+    void loadTasks();
 
     return () => {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    async function syncSnapshot() {
+      if (!currentUserId || loading || studyBlocksLoading) return;
+      await upsertTodayLeaderboardSnapshotClient(currentUserId, tasks, studyBlocks);
+    }
+
+    void syncSnapshot();
+  }, [currentUserId, tasks, studyBlocks, loading, studyBlocksLoading]);
 
   async function refreshProfileUi(userId: string) {
     const latest = await getProfileProgress(userId);
@@ -543,10 +612,7 @@ export default function TasksPage() {
       completed: data.completed,
     };
 
-    const updatedTasks = [newTask, ...tasks];
-    setTasks(updatedTasks);
-
-    await upsertTodayLeaderboardSnapshotClient(user.id, updatedTasks);
+    setTasks((prev) => [newTask, ...prev]);
 
     setTitle("");
     setModule("");
@@ -597,8 +663,6 @@ export default function TasksPage() {
       await maybeUnlockStreakBadge(user.id, syncedProfile.streak ?? 0);
       await refreshProfileUi(user.id);
     }
-
-    await upsertTodayLeaderboardSnapshotClient(user.id, updatedTasks);
   }
 
   async function deleteTask(id: string) {
@@ -619,10 +683,7 @@ export default function TasksPage() {
       return;
     }
 
-    const updatedTasks = tasks.filter((task) => task.id !== id);
-    setTasks(updatedTasks);
-
-    await upsertTodayLeaderboardSnapshotClient(user.id, updatedTasks);
+    setTasks((prev) => prev.filter((task) => task.id !== id));
   }
 
   async function handleLogout() {
@@ -637,7 +698,12 @@ export default function TasksPage() {
     (task) => !task.completed && getDaysUntilDue(task.dueDate) < 0
   ).length;
 
-  const cookedScore = useMemo(() => calculateSimpleCookedScore(tasks), [tasks]);
+  const cookedResult = useMemo(
+    () => calculateCookedScore(tasks, studyBlocks),
+    [tasks, studyBlocks]
+  );
+
+  const cookedScore = cookedResult.score;
 
   const sortedTasks = useMemo(() => {
     return [...tasks].sort((a, b) => {
@@ -912,7 +978,8 @@ export default function TasksPage() {
                     </p>
                     <p className="mt-2 text-sm leading-6 text-slate-300">
                       Every completed task gives you {XP_REWARD_TASK_COMPLETE} XP.
-                      Streaks update automatically, and badges unlock as you build consistency.
+                      Streaks update automatically, and badges unlock as you build
+                      consistency.
                     </p>
                   </div>
                 </div>
@@ -926,7 +993,8 @@ export default function TasksPage() {
                       Clear overdue tasks first for the fastest stress reduction.
                     </p>
                     <p className="mt-2 text-sm leading-6 text-slate-400">
-                      Knock out anything overdue or due today, then work forward in date order.
+                      Knock out anything overdue or due today, then work forward in
+                      date order.
                     </p>
                   </div>
                   <ChevronRight className="mt-1 h-5 w-5 text-slate-500" />
@@ -987,7 +1055,8 @@ export default function TasksPage() {
                     </div>
                     <h3 className="text-2xl font-semibold text-white">No tasks yet</h3>
                     <p className="mx-auto mt-3 max-w-md text-slate-400">
-                      Add your first task to start organising your workload and tracking deadlines properly.
+                      Add your first task to start organising your workload and
+                      tracking deadlines properly.
                     </p>
                   </div>
                 ) : filteredTasks.length === 0 ? (
@@ -997,7 +1066,8 @@ export default function TasksPage() {
                     </div>
                     <h3 className="text-2xl font-semibold text-white">Nothing here</h3>
                     <p className="mx-auto mt-3 max-w-md text-slate-400">
-                      There are no tasks in the <span className="text-slate-200">{filter}</span> view right now.
+                      There are no tasks in the <span className="text-slate-200">{filter}</span>{" "}
+                      view right now.
                     </p>
                   </div>
                 ) : (
