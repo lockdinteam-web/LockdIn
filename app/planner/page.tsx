@@ -73,15 +73,6 @@ type PlannerPreferences = {
   location: string;
 };
 
-type DatabasePlannerPreferences = {
-  user_id: string;
-  available_days: string[];
-  available_time_slots: string[];
-  session_length: number;
-  daily_session_limit: number;
-  location: string;
-};
-
 const DAY_OPTIONS = [
   "Monday",
   "Tuesday",
@@ -218,21 +209,20 @@ function generatePlanFromTasks(
 
   const orderedDays = sortDays(preferences.availableDays);
   const orderedTimes = sortTimes(preferences.availableTimeSlots);
-
   const limitedTimes = orderedTimes.slice(
     0,
     Math.min(preferences.dailySessionLimit, orderedTimes.length)
   );
 
+  if (orderedDays.length === 0 || limitedTimes.length === 0) return [];
+
   const availableSlots = orderedDays.flatMap((day) =>
     limitedTimes.map((time) => ({ day, time }))
   );
 
-  if (availableSlots.length === 0) return [];
-
-  const rankedTasks = [...activeTasks].sort((a, b) => {
-    return buildTaskWeight(b) - buildTaskWeight(a);
-  });
+  const rankedTasks = [...activeTasks].sort(
+    (a, b) => buildTaskWeight(b) - buildTaskWeight(a)
+  );
 
   const expandedTasks: Task[] = [];
 
@@ -245,19 +235,13 @@ function generatePlanFromTasks(
 
   if (expandedTasks.length === 0) return [];
 
-  const assignedTasks: Task[] = [];
-  let pointer = 0;
+  const blocks: Omit<StudyBlock, "id">[] = [];
 
-  while (assignedTasks.length < availableSlots.length) {
-    assignedTasks.push(expandedTasks[pointer % expandedTasks.length]);
-    pointer += 1;
+  for (let i = 0; i < availableSlots.length; i++) {
+    const slot = availableSlots[i];
+    const task = expandedTasks[i % expandedTasks.length];
 
-    if (pointer > availableSlots.length * 3) break;
-  }
-
-  return availableSlots.map((slot, index) => {
-    const task = assignedTasks[index];
-    return {
+    blocks.push({
       day: slot.day,
       time: slot.time,
       subject: task.module,
@@ -266,8 +250,10 @@ function generatePlanFromTasks(
       durationMinutes: preferences.sessionLength,
       completed: false,
       location: preferences.location || "Library",
-    };
-  });
+    });
+  }
+
+  return blocks;
 }
 
 function groupBlocksByDay(blocks: StudyBlock[]) {
@@ -279,6 +265,28 @@ function groupBlocksByDay(blocks: StudyBlock[]) {
   }));
 
   return grouped.filter((group) => group.blocks.length > 0);
+}
+
+async function fetchUserTasks(userId: string): Promise<Task[]> {
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Error loading tasks:", error.message);
+    return [];
+  }
+
+  return ((data ?? []) as DatabaseTask[]).map((task) => ({
+    id: task.id,
+    title: task.title,
+    module: task.module,
+    dueDate: task.due_date,
+    priority: task.priority,
+    completed: task.completed,
+  }));
 }
 
 export default function PlannerPage() {
@@ -308,16 +316,8 @@ export default function PlannerPage() {
           return;
         }
 
-        const [
-          { data: taskData, error: taskError },
-          { data: prefData, error: prefError },
-          { data: planData, error: planError },
-        ] = await Promise.all([
-          supabase
-            .from("tasks")
-            .select("*")
-            .eq("user_id", user.id)
-            .order("created_at", { ascending: false }),
+        const [freshTasks, prefRes, planRes] = await Promise.all([
+          fetchUserTasks(user.id),
           supabase
             .from("planner_preferences")
             .select("*")
@@ -331,47 +331,39 @@ export default function PlannerPage() {
             .order("time", { ascending: true }),
         ]);
 
-        if (taskError) {
-          console.error("Error loading tasks:", taskError.message);
+        if (!mounted) return;
+
+        setTasks(freshTasks);
+
+        if (prefRes.error) {
+          console.error(
+            "Error loading planner preferences:",
+            prefRes.error.message
+          );
         }
 
-        if (prefError) {
-          console.error("Error loading planner preferences:", prefError.message);
+        if (planRes.error) {
+          console.error("Error loading study plan:", planRes.error.message);
         }
 
-        if (planError) {
-          console.error("Error loading study plan:", planError.message);
+        if (prefRes.data) {
+          setPreferences({
+            availableDays:
+              prefRes.data.available_days ?? DEFAULT_PREFERENCES.availableDays,
+            availableTimeSlots:
+              prefRes.data.available_time_slots ??
+              DEFAULT_PREFERENCES.availableTimeSlots,
+            sessionLength:
+              prefRes.data.session_length ?? DEFAULT_PREFERENCES.sessionLength,
+            dailySessionLimit:
+              prefRes.data.daily_session_limit ??
+              DEFAULT_PREFERENCES.dailySessionLimit,
+            location: prefRes.data.location ?? DEFAULT_PREFERENCES.location,
+          });
         }
-
-        const mappedTasks: Task[] = ((taskData ?? []) as DatabaseTask[]).map(
-          (task) => ({
-            id: task.id,
-            title: task.title,
-            module: task.module,
-            dueDate: task.due_date,
-            priority: task.priority,
-            completed: task.completed,
-          })
-        );
-
-        const mappedPrefs: PlannerPreferences = prefData
-          ? {
-              availableDays:
-                prefData.available_days ?? DEFAULT_PREFERENCES.availableDays,
-              availableTimeSlots:
-                prefData.available_time_slots ??
-                DEFAULT_PREFERENCES.availableTimeSlots,
-              sessionLength:
-                prefData.session_length ?? DEFAULT_PREFERENCES.sessionLength,
-              dailySessionLimit:
-                prefData.daily_session_limit ??
-                DEFAULT_PREFERENCES.dailySessionLimit,
-              location: prefData.location ?? DEFAULT_PREFERENCES.location,
-            }
-          : DEFAULT_PREFERENCES;
 
         const mappedPlan: StudyBlock[] = (
-          (planData ?? []) as DatabaseStudyBlock[]
+          (planRes.data ?? []) as DatabaseStudyBlock[]
         ).map((block) => ({
           id: block.id,
           day: block.day,
@@ -384,10 +376,6 @@ export default function PlannerPage() {
           location: block.location,
         }));
 
-        if (!mounted) return;
-
-        setTasks(mappedTasks);
-        setPreferences(mappedPrefs);
         setPlan(mappedPlan);
       } catch (error) {
         console.error("Unexpected error loading planner page:", error);
@@ -460,18 +448,25 @@ export default function PlannerPage() {
         return;
       }
 
-      const saved = await savePreferences(preferences);
-      if (!saved) {
+      const savedPrefs = await savePreferences(preferences);
+      if (!savedPrefs) {
         setPlannerMessage("Could not save planner preferences.");
         return;
       }
 
-      const generated = generatePlanFromTasks(tasks, preferences);
+      const freshTasks = await fetchUserTasks(user.id);
+      setTasks(freshTasks);
+
+      const generated = generatePlanFromTasks(freshTasks, preferences);
 
       if (generated.length === 0) {
         setPlan([]);
         setPlannerMessage(
-          "No plan could be generated. Make sure you have unfinished tasks and at least one study day and time selected."
+          `No plan could be generated. Active tasks: ${
+            freshTasks.filter((t) => !t.completed).length
+          }, selected days: ${preferences.availableDays.length}, selected times: ${
+            preferences.availableTimeSlots.length
+          }.`
         );
         return;
       }
@@ -503,7 +498,7 @@ export default function PlannerPage() {
       if (deleteError) {
         console.error("Error clearing old study plan:", deleteError.message);
         setPlannerMessage(
-          "Plan was generated, but old saved blocks could not be cleared."
+          "Plan generated in the UI, but old saved blocks could not be cleared."
         );
         return;
       }
@@ -527,7 +522,7 @@ export default function PlannerPage() {
       if (insertError) {
         console.error("Error saving generated study plan:", insertError.message);
         setPlannerMessage(
-          "Plan generated in the UI, but saving to your account failed. Check your table setup or RLS."
+          "Plan generated in the UI, but saving failed. Check Supabase RLS/table setup."
         );
         return;
       }
@@ -541,9 +536,6 @@ export default function PlannerPage() {
 
       if (refreshError) {
         console.error("Error reloading saved study plan:", refreshError.message);
-        setPlannerMessage(
-          "Plan generated and saved, but it could not be reloaded from the database."
-        );
         return;
       }
 
@@ -579,6 +571,15 @@ export default function PlannerPage() {
     const current = plan.find((block) => block.id === id);
     if (!current) return;
 
+    if (current.id.startsWith("temp-")) {
+      setPlan((prev) =>
+        prev.map((block) =>
+          block.id === id ? { ...block, completed: !block.completed } : block
+        )
+      );
+      return;
+    }
+
     const { error } = await supabase
       .from("study_plan_blocks")
       .update({ completed: !current.completed })
@@ -597,6 +598,14 @@ export default function PlannerPage() {
   }
 
   async function deleteBlock(id: string) {
+    const current = plan.find((block) => block.id === id);
+    if (!current) return;
+
+    if (current.id.startsWith("temp-")) {
+      setPlan((prev) => prev.filter((block) => block.id !== id));
+      return;
+    }
+
     const { error } = await supabase
       .from("study_plan_blocks")
       .delete()
