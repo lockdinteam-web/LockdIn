@@ -27,6 +27,12 @@ import {
   Share2,
   Clock3,
   ArrowUpRight,
+  BookOpen,
+  CheckCircle2,
+  Star,
+  TrendingUp,
+  Users,
+  TimerReset,
 } from "lucide-react";
 
 type Priority = "High" | "Medium" | "Low";
@@ -209,11 +215,11 @@ function getCookedBarClass(score: number) {
 }
 
 function getCookedGlowClass(score: number) {
-  if (score <= 20) return "shadow-[0_0_40px_rgba(16,185,129,0.18)]";
-  if (score <= 40) return "shadow-[0_0_40px_rgba(132,204,22,0.18)]";
-  if (score <= 60) return "shadow-[0_0_40px_rgba(245,158,11,0.18)]";
-  if (score <= 80) return "shadow-[0_0_40px_rgba(249,115,22,0.18)]";
-  return "shadow-[0_0_40px_rgba(244,63,94,0.18)]";
+  if (score <= 20) return "shadow-[0_0_60px_rgba(16,185,129,0.16)]";
+  if (score <= 40) return "shadow-[0_0_60px_rgba(132,204,22,0.16)]";
+  if (score <= 60) return "shadow-[0_0_60px_rgba(245,158,11,0.16)]";
+  if (score <= 80) return "shadow-[0_0_60px_rgba(249,115,22,0.16)]";
+  return "shadow-[0_0_60px_rgba(244,63,94,0.16)]";
 }
 
 function getCookedZone(score: number) {
@@ -284,10 +290,10 @@ function getHeroSubtitle(score: number) {
 }
 
 function getLeaderboardAccent(score: number) {
-  if (score >= 85) return "border-rose-400/30 bg-rose-500/10";
-  if (score >= 65) return "border-orange-400/30 bg-orange-500/10";
-  if (score >= 40) return "border-amber-400/30 bg-amber-500/10";
-  return "border-emerald-400/30 bg-emerald-500/10";
+  if (score >= 85) return "border-rose-400/25 bg-rose-500/10";
+  if (score >= 65) return "border-orange-400/25 bg-orange-500/10";
+  if (score >= 40) return "border-amber-400/25 bg-amber-500/10";
+  return "border-emerald-400/25 bg-emerald-500/10";
 }
 
 function getLevelFromXp(xp: number) {
@@ -300,6 +306,66 @@ function getXpIntoCurrentLevel(xp: number) {
 
 function getXpNeededForNextLevel() {
   return 100;
+}
+
+function normalizeDayLabel(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function blockMatchesToday(blockDay: string, today: Date) {
+  const raw = normalizeDayLabel(blockDay);
+
+  const longDay = today.toLocaleDateString("en-GB", { weekday: "long" }).toLowerCase();
+  const shortDay = today.toLocaleDateString("en-GB", { weekday: "short" }).toLowerCase();
+
+  if (raw === longDay || raw === shortDay) return true;
+
+  const dayAliases: Record<string, string[]> = {
+    monday: ["mon"],
+    tuesday: ["tue", "tues"],
+    wednesday: ["wed"],
+    thursday: ["thu", "thur", "thurs"],
+    friday: ["fri"],
+    saturday: ["sat"],
+    sunday: ["sun"],
+  };
+
+  for (const [full, aliases] of Object.entries(dayAliases)) {
+    if (
+      (raw === full || aliases.includes(raw)) &&
+      (longDay === full || aliases.includes(longDay))
+    ) {
+      return true;
+    }
+  }
+
+  const parsed = new Date(blockDay);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10) === today.toISOString().slice(0, 10);
+  }
+
+  return false;
+}
+
+function parseTimeToMinutes(value: string) {
+  if (!value) return 9999;
+
+  const simple = value.match(/^(\d{1,2}):(\d{2})$/);
+  if (simple) {
+    return Number(simple[1]) * 60 + Number(simple[2]);
+  }
+
+  const ampm = value.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+  if (ampm) {
+    let hour = Number(ampm[1]);
+    const minutes = Number(ampm[2] ?? "0");
+    const suffix = ampm[3].toLowerCase();
+    if (suffix === "pm" && hour !== 12) hour += 12;
+    if (suffix === "am" && hour === 12) hour = 0;
+    return hour * 60 + minutes;
+  }
+
+  return 9999;
 }
 
 async function copyText(text: string) {
@@ -410,6 +476,22 @@ async function syncDailyProfileProgress(
   };
 }
 
+function GlassCard({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,16,32,0.88),rgba(7,12,24,0.92))] backdrop-blur-xl shadow-[0_20px_80px_rgba(0,0,0,0.34)] ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function HomePage() {
   const router = useRouter();
   const { tasks: providerTasks, loading } = useTasks();
@@ -439,9 +521,7 @@ export default function HomePage() {
       const { data, error } = await supabase
         .from("study_plan_blocks")
         .select("*")
-        .eq("user_id", userId)
-        .order("day", { ascending: true })
-        .order("time", { ascending: true });
+        .eq("user_id", userId);
 
       if (error) {
         console.error("Error loading study blocks:", error.message);
@@ -472,6 +552,10 @@ export default function HomePage() {
       );
 
       setStudyBlocks(mapped);
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem(STUDY_PLAN_STORAGE_KEY, JSON.stringify(mapped));
+      }
     } catch (error) {
       console.error("Unexpected study blocks error:", error);
       setStudyBlocks([]);
@@ -992,7 +1076,9 @@ export default function HomePage() {
         ? Math.round((completedStudyBlocks / studyBlocks.length) * 100)
         : 0;
 
-    const recent = [...tasks].slice(0, 4);
+    const recent = [...tasks]
+      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+      .slice(0, 4);
 
     return {
       completed,
@@ -1059,8 +1145,11 @@ export default function HomePage() {
   }, [tasks]);
 
   const todaysStudyBlocks = useMemo(() => {
-    const todayName = new Date().toLocaleDateString("en-GB", { weekday: "long" });
-    return studyBlocks.filter((block) => block.day === todayName);
+    const today = new Date();
+
+    return [...studyBlocks]
+      .filter((block) => blockMatchesToday(String(block.day ?? ""), today))
+      .sort((a, b) => parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time));
   }, [studyBlocks]);
 
   const coachTitle =
@@ -1161,26 +1250,28 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#030712] text-white">
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.16),transparent_28%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.12),transparent_24%),radial-gradient(circle_at_bottom_right,rgba(244,63,94,0.08),transparent_26%)]" />
-      <div className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,transparent_18%,transparent_82%,rgba(255,255,255,0.02)_100%)]" />
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.16),transparent_24%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.14),transparent_22%),radial-gradient(circle_at_bottom_right,rgba(244,63,94,0.10),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(59,130,246,0.10),transparent_24%)]" />
+      <div className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,transparent_20%,transparent_80%,rgba(255,255,255,0.02)_100%)]" />
+      <div className="absolute inset-0 -z-10 opacity-[0.04] [background-image:linear-gradient(rgba(255,255,255,0.7)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.7)_1px,transparent_1px)] [background-size:42px_42px]" />
 
       <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
         <div className="space-y-6">
-          <section className="overflow-hidden rounded-[34px] border border-white/10 bg-[linear-gradient(180deg,#07111f_0%,#091427_100%)] p-5 shadow-[0_28px_100px_rgba(0,0,0,0.42)] sm:p-8">
-            <div className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
-              <div className="min-w-0">
+          <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+            <GlassCard className="relative overflow-hidden p-5 sm:p-7">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.18),transparent_36%),radial-gradient(circle_at_bottom_right,rgba(168,85,247,0.12),transparent_28%)]" />
+              <div className="relative">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-300 sm:text-sm">
                     <Sparkles className="h-4 w-4 text-blue-300" />
-                    Built for students who actually want to win the semester
+                    Premium student control centre
                   </div>
 
                   {isLoggedIn && profile ? (
                     <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500 text-sm font-semibold text-white">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[linear-gradient(135deg,#3b82f6,#8b5cf6)] text-sm font-semibold text-white shadow-lg shadow-blue-500/20">
                         {profile.username?.[0]?.toUpperCase()}
                       </div>
-                      <div className="min-w-0 text-left">
+                      <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-white">
                           @{profile.username}
                         </p>
@@ -1201,13 +1292,19 @@ export default function HomePage() {
 
                 <div className="mt-7 max-w-3xl">
                   <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-5xl xl:text-6xl">
-                    Stay ahead.
-                    <br className="hidden sm:block" />
-                    Don’t get cooked.
+                    The home page that
+                    <span className="bg-[linear-gradient(90deg,#60a5fa,#c084fc,#f472b6)] bg-clip-text text-transparent">
+                      {" "}
+                      makes you lock in.
+                    </span>
                   </h1>
                   <p className="mt-4 max-w-2xl text-base leading-8 text-slate-300 sm:text-lg">
-                    See what matters today, how much pressure you are under, what to
-                    study next, and how you stack up against your friends.
+                    See your pressure level, what to attack first, how your plan looks
+                    today, and where you stand against your friends — all in one
+                    premium dashboard.
+                  </p>
+                  <p className="mt-3 text-sm text-slate-400">
+                    {loading ? "Loading..." : getHeroSubtitle(cooked.score)}
                   </p>
                 </div>
 
@@ -1250,7 +1347,7 @@ export default function HomePage() {
                       {loading ? "..." : `${stats.completionRate}%`}
                     </p>
                     <p className="mt-2 text-xs text-emerald-200/70">
-                      {loading ? "..." : `${stats.completed} completed`}
+                      {loading ? "..." : `${stats.completed} finished`}
                     </p>
                   </div>
 
@@ -1270,7 +1367,7 @@ export default function HomePage() {
                 <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                   <Link
                     href="/tasks"
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-500 px-6 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#2563eb,#3b82f6)] px-6 py-3 text-sm font-medium text-white shadow-lg shadow-blue-600/20 transition hover:scale-[1.01] hover:brightness-110"
                   >
                     <ClipboardList className="h-4 w-4" />
                     Open Tasks
@@ -1307,155 +1404,509 @@ export default function HomePage() {
                   </div>
                 ) : null}
               </div>
+            </GlassCard>
 
-              <div
-                className={`relative rounded-[30px] border border-white/10 bg-white/[0.045] p-5 backdrop-blur-xl sm:p-6 ${getCookedGlowClass(
-                  cooked.score
-                )}`}
-              >
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.14),transparent_48%)]" />
-
-                <div className="relative">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                        Live Cooked Score
-                      </p>
-                      <div className="mt-4 flex items-end gap-3">
-                        <span
-                          className={`text-6xl font-semibold sm:text-7xl ${getCookedTextColor(
-                            cooked.score
-                          )}`}
-                        >
-                          {loading ? "..." : cooked.score}
-                        </span>
-                        <span className="pb-2 text-2xl text-slate-500">/100</span>
-                      </div>
-                      <p className="mt-2 text-base font-medium text-white">
-                        {loading ? "Loading..." : getCookedZone(cooked.score)}
-                      </p>
-                      <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">
-                        {loading ? "..." : getRoastLabel(cooked.score)}
-                      </p>
+            <GlassCard
+              className={`relative overflow-hidden p-5 sm:p-6 ${getCookedGlowClass(
+                cooked.score
+              )}`}
+            >
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.14),transparent_46%)]" />
+              <div className="relative">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.25em] text-slate-400">
+                      Live Cooked Score
+                    </p>
+                    <div className="mt-4 flex items-end gap-3">
+                      <span
+                        className={`text-6xl font-semibold sm:text-7xl ${getCookedTextColor(
+                          cooked.score
+                        )}`}
+                      >
+                        {loading ? "..." : cooked.score}
+                      </span>
+                      <span className="pb-2 text-2xl text-slate-500">/100</span>
                     </div>
-
-                    <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-right">
-                      <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                        Status
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-white">
-                        {loading ? "Loading..." : cooked.status}
-                      </p>
-                    </div>
+                    <p className="mt-2 text-base font-medium text-white">
+                      {loading ? "Loading..." : getCookedZone(cooked.score)}
+                    </p>
+                    <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">
+                      {loading ? "..." : getRoastLabel(cooked.score)}
+                    </p>
                   </div>
 
-                  <div className="mt-6 h-3 w-full overflow-hidden rounded-full bg-white/10">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-right">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                      Status
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-white">
+                      {loading ? "Loading..." : cooked.status}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-6 h-3 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${getCookedBarClass(
+                      cooked.score
+                    )}`}
+                    style={{
+                      width: `${Math.max(8, loading ? 8 : cooked.score)}%`,
+                    }}
+                  />
+                </div>
+
+                <p className="mt-4 text-sm leading-7 text-slate-300">
+                  {loading
+                    ? "Loading your dashboard..."
+                    : getMotivationLine(cooked.score, stats.pending, stats.overdue)}
+                </p>
+
+                <div className="mt-5 grid grid-cols-3 gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                      Active
+                    </p>
+                    <p className="mt-2 text-xl font-semibold text-white">
+                      {stats.pending}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                      Urgent
+                    </p>
+                    <p className="mt-2 text-xl font-semibold text-white">
+                      {stats.urgent}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                      Study Hrs
+                    </p>
+                    <p className="mt-2 text-xl font-semibold text-white">
+                      {loading ? "..." : stats.studyHours}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                        Level Progress
+                      </p>
+                      <p className="mt-2 text-lg font-semibold text-white">
+                        Level {profileLevel}
+                      </p>
+                    </div>
+                    <p className="text-sm text-slate-400">
+                      {xpIntoLevel}/{xpNeededForNextLevel} XP
+                    </p>
+                  </div>
+
+                  <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-white/10">
                     <div
-                      className={`h-full rounded-full transition-all duration-500 ${getCookedBarClass(
-                        cooked.score
-                      )}`}
-                      style={{
-                        width: `${Math.max(8, loading ? 8 : cooked.score)}%`,
-                      }}
+                      className="h-full rounded-full bg-white transition-all duration-500"
+                      style={{ width: `${Math.max(6, levelProgress)}%` }}
                     />
                   </div>
+                </div>
 
-                  <p className="mt-4 text-sm leading-7 text-slate-300">
-                    {loading ? "Loading your dashboard..." : getHeroSubtitle(cooked.score)}
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => handleShareScore(cooked.score)}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                  >
+                    Share my score
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCopyInvite}
+                    className="rounded-2xl border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-sm font-medium text-blue-200 transition hover:border-blue-400 hover:bg-blue-500/20"
+                  >
+                    Copy invite link
+                  </button>
+                </div>
+
+                <div className="mt-6 flex items-center justify-between rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] px-4 py-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                      Powered by
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-white">LockdIn</p>
+                  </div>
+                  <Image
+                    src="/logo.png"
+                    alt="LockdIn logo"
+                    width={110}
+                    height={110}
+                    className="h-auto w-[74px] object-contain opacity-95"
+                    priority
+                  />
+                </div>
+              </div>
+            </GlassCard>
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+            <GlassCard className="p-5 sm:p-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-400/20">
+                    <Users className="h-3.5 w-3.5" />
+                    Social Pressure
+                  </div>
+                  <h2 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
+                    Cooked Leaderboard
+                  </h2>
+                  <p className="mt-2 text-sm text-slate-400">
+                    {leaderboardHeadline}
+                  </p>
+                  {yourRank ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Your current rank: #{yourRank}
+                    </p>
+                  ) : null}
+                </div>
+
+                {isLoggedIn ? (
+                  <button
+                    type="button"
+                    onClick={() => handleShareLeaderboard(sortedLeaderboard)}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                  >
+                    Share leaderboard
+                  </button>
+                ) : null}
+              </div>
+
+              {isLoggedIn ? (
+                <>
+                  <form
+                    onSubmit={handleAddFriend}
+                    className="mt-6 grid gap-3 md:grid-cols-[1fr_auto]"
+                  >
+                    <input
+                      type="text"
+                      value={friendUsername}
+                      onChange={(e) => setFriendUsername(e.target.value)}
+                      placeholder="Add friend by username"
+                      className="rounded-2xl border border-white/10 bg-[#101b38] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
+                    />
+
+                    <button
+                      type="submit"
+                      disabled={addingFriend}
+                      className="rounded-2xl bg-[linear-gradient(135deg,#2563eb,#3b82f6)] px-5 py-3 text-sm font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {addingFriend ? "Adding..." : "Add friend"}
+                    </button>
+                  </form>
+
+                  <p className="mt-3 text-xs text-slate-500">
+                    Add friends by their LockdIn username.
+                  </p>
+
+                  {friendError ? (
+                    <p className="mt-3 text-sm text-rose-300">{friendError}</p>
+                  ) : null}
+
+                  {friendSuccess ? (
+                    <p className="mt-3 text-sm text-emerald-300">{friendSuccess}</p>
+                  ) : null}
+
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setLeaderboardMode("mostCooked")}
+                      className={`rounded-full px-4 py-2 text-sm transition ${
+                        leaderboardMode === "mostCooked"
+                          ? "bg-rose-500/15 text-rose-300 ring-1 ring-rose-400/20"
+                          : "bg-white/5 text-slate-300 hover:bg-white/10"
+                      }`}
+                    >
+                      Most Cooked
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLeaderboardMode("biggestComeback")}
+                      className={`rounded-full px-4 py-2 text-sm transition ${
+                        leaderboardMode === "biggestComeback"
+                          ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/20"
+                          : "bg-white/5 text-slate-300 hover:bg-white/10"
+                      }`}
+                    >
+                      Biggest Comeback
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLeaderboardMode("mostLockedIn")}
+                      className={`rounded-full px-4 py-2 text-sm transition ${
+                        leaderboardMode === "mostLockedIn"
+                          ? "bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/20"
+                          : "bg-white/5 text-slate-300 hover:bg-white/10"
+                      }`}
+                    >
+                      Most Locked In
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLeaderboardMode("mostActive")}
+                      className={`rounded-full px-4 py-2 text-sm transition ${
+                        leaderboardMode === "mostActive"
+                          ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/20"
+                          : "bg-white/5 text-slate-300 hover:bg-white/10"
+                      }`}
+                    >
+                      Most Active
+                    </button>
+                  </div>
+
+                  <div className="mt-5 rounded-[26px] border border-white/10 bg-[#0b1430]/80 p-2">
+                    <div className="max-h-[540px] space-y-3 overflow-y-auto pr-1">
+                      {leaderboardLoading ? (
+                        <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                          Loading leaderboard...
+                        </div>
+                      ) : sortedLeaderboard.length === 0 ? (
+                        <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                          No one on the leaderboard yet. Add a friend by username to
+                          start the chaos.
+                        </div>
+                      ) : (
+                        sortedLeaderboard.map((entry, index) => (
+                          <div
+                            key={entry.id}
+                            className={`rounded-3xl border p-4 ${getLeaderboardAccent(
+                              entry.cookedScore
+                            )} ${entry.isYou ? "ring-1 ring-blue-400/30" : ""}`}
+                          >
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    #{entry.rank}
+                                  </span>
+
+                                  {index === 0 ? (
+                                    <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1 text-xs text-amber-300">
+                                      <span className="inline-flex items-center gap-1">
+                                        <Crown className="h-3 w-3" />
+                                        Top
+                                      </span>
+                                    </span>
+                                  ) : null}
+
+                                  <p className="break-words text-base font-semibold text-white">
+                                    @{entry.username}
+                                  </p>
+
+                                  {entry.isYou ? (
+                                    <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs text-blue-200">
+                                      You
+                                    </span>
+                                  ) : null}
+
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    {entry.roastLabel}
+                                  </span>
+                                </div>
+
+                                <p className="mt-2 text-sm text-slate-400">
+                                  {entry.course} • {entry.university}
+                                </p>
+
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    {entry.pendingTasks} active task
+                                    {entry.pendingTasks === 1 ? "" : "s"}
+                                  </span>
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    {entry.completionRate}% completion
+                                  </span>
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    {entry.streak} day streak
+                                  </span>
+                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                    {entry.momentumLabel}
+                                  </span>
+                                  <span
+                                    className={`rounded-full border px-3 py-1 text-xs ${
+                                      entry.weeklyCookedChange < 0
+                                        ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
+                                        : entry.weeklyCookedChange > 0
+                                        ? "border-rose-400/20 bg-rose-500/10 text-rose-300"
+                                        : "border-white/10 bg-white/5 text-slate-300"
+                                    }`}
+                                  >
+                                    7d cooked: {entry.weeklyCookedChange > 0 ? "+" : ""}
+                                    {entry.weeklyCookedChange}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="text-left sm:text-right">
+                                <p
+                                  className={`text-3xl font-semibold sm:text-4xl ${getCookedTextColor(
+                                    entry.cookedScore
+                                  )}`}
+                                >
+                                  {entry.cookedScore}
+                                </p>
+                                <p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                                  cooked score
+                                </p>
+                                <p className="mt-2 text-sm text-slate-300">
+                                  {entry.status}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-black/20">
+                              <div
+                                className={`h-full rounded-full ${getCookedBarClass(
+                                  entry.cookedScore
+                                )}`}
+                                style={{
+                                  width: `${Math.max(6, entry.cookedScore)}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="mt-6 rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                  Log in to start a cooked leaderboard with your friends.
+                </div>
+              )}
+            </GlassCard>
+
+            <div className="space-y-6">
+              <GlassCard className={`p-5 sm:p-6 ${getCookedGlowClass(cooked.score)}`}>
+                <div className="flex items-center gap-2 text-sm text-slate-400">
+                  <Flame className="h-4 w-4 text-orange-300" />
+                  Score Breakdown
+                </div>
+
+                <div className="mt-4 flex items-end gap-3">
+                  <span
+                    className={`text-5xl font-semibold ${getCookedTextColor(
+                      cooked.score
+                    )}`}
+                  >
+                    {loading ? "..." : cooked.score}
+                  </span>
+                  <span className="pb-2 text-xl text-slate-500">/100</span>
+                </div>
+
+                <p className="mt-2 text-base font-medium text-white">
+                  {loading ? "Loading..." : cooked.status}
+                </p>
+
+                <ul className="mt-5 space-y-3">
+                  {(loading ? ["Loading your risk factors..."] : cooked.reasons)
+                    .slice(0, 4)
+                    .map((reason) => (
+                      <li
+                        key={reason}
+                        className="flex items-start gap-3 text-sm text-slate-200"
+                      >
+                        <span className="mt-2 h-2 w-2 rounded-full bg-blue-400" />
+                        <span>{reason}</span>
+                      </li>
+                    ))}
+                </ul>
+
+                <div className="mt-6">
+                  {bestRecoveryAction ? (
+                    <Link
+                      href={bestRecoveryAction.route}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#2563eb,#3b82f6)] px-5 py-3 text-sm font-medium text-white transition hover:brightness-110"
+                    >
+                      <Zap className="h-4 w-4" />
+                      Reduce My Score
+                    </Link>
+                  ) : (
+                    <Link
+                      href="/tasks"
+                      className="inline-flex w-full items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#2563eb,#3b82f6)] px-5 py-3 text-sm font-medium text-white transition hover:brightness-110"
+                    >
+                      Add a Task
+                    </Link>
+                  )}
+                </div>
+              </GlassCard>
+
+              <GlassCard className="p-5 sm:p-6">
+                <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10">
+                  <Share2 className="h-3.5 w-3.5" />
+                  Shareable Moment
+                </div>
+
+                <h3 className="mt-4 text-2xl font-semibold text-white">
+                  Your latest flex
+                </h3>
+
+                <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                    Current snapshot
+                  </p>
+                  <h4 className="mt-2 text-2xl font-semibold text-white">
+                    {getRoastLabel(cooked.score)}
+                  </h4>
+                  <p className="mt-2 text-sm text-slate-300">
+                    You’re on {cooked.score}/100 with {stats.pending} active tasks and a{" "}
+                    {profile ? profile.streak : 0}-day streak.
                   </p>
 
                   <div className="mt-5 grid grid-cols-3 gap-3">
                     <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                        Active
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                        Score
                       </p>
                       <p className="mt-2 text-xl font-semibold text-white">
-                        {stats.pending}
+                        {cooked.score}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                        Urgent
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                        XP
                       </p>
                       <p className="mt-2 text-xl font-semibold text-white">
-                        {stats.urgent}
+                        {profile?.xp ?? 0}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                        Study Hrs
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                        Streak
                       </p>
                       <p className="mt-2 text-xl font-semibold text-white">
-                        {loading ? "..." : stats.studyHours}
+                        {profile ? profile.streak : 0}
                       </p>
                     </div>
                   </div>
 
-                  <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                          Level Progress
-                        </p>
-                        <p className="mt-2 text-lg font-semibold text-white">
-                          Level {profileLevel}
-                        </p>
-                      </div>
-                      <p className="text-sm text-slate-400">
-                        {xpIntoLevel}/{xpNeededForNextLevel} XP
-                      </p>
-                    </div>
-
-                    <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className="h-full rounded-full bg-white transition-all duration-500"
-                        style={{ width: `${Math.max(6, levelProgress)}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      onClick={() => handleShareScore(cooked.score)}
-                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
-                    >
-                      Share my score
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCopyInvite}
-                      className="rounded-2xl border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-sm font-medium text-blue-200 transition hover:border-blue-400 hover:bg-blue-500/20"
-                    >
-                      Copy invite link
-                    </button>
-                  </div>
-
-                  <div className="mt-6 flex items-center justify-between rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] px-4 py-3">
-                    <div>
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                        Powered by
-                      </p>
-                      <p className="mt-1 text-sm font-medium text-white">
-                        LockdIn
-                      </p>
-                    </div>
-                    <Image
-                      src="/logo.png"
-                      alt="LockdIn logo"
-                      width={110}
-                      height={110}
-                      className="h-auto w-[74px] object-contain opacity-95"
-                      priority
-                    />
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleShareScore(cooked.score)}
+                    className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                  >
+                    <Share2 className="h-4 w-4" />
+                    Share this
+                  </button>
                 </div>
-              </div>
+              </GlassCard>
             </div>
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-            <div className="rounded-[30px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-7">
+          <section className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+            <GlassCard className="p-5 sm:p-7">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="inline-flex items-center gap-2 rounded-full bg-blue-500/15 px-3 py-1 text-xs font-medium text-blue-300 ring-1 ring-blue-400/20">
@@ -1487,7 +1938,11 @@ export default function HomePage() {
                         Biggest Threat
                       </p>
                       <p className="mt-2 text-lg font-semibold text-white">
-                        {loading ? "Loading..." : biggestThreat ? biggestThreat.title : "No immediate threats"}
+                        {loading
+                          ? "Loading..."
+                          : biggestThreat
+                          ? biggestThreat.title
+                          : "No immediate threats"}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3">
@@ -1519,7 +1974,7 @@ export default function HomePage() {
 
                       <Link
                         href="/tasks"
-                        className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
+                        className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#2563eb,#3b82f6)] px-5 py-3 text-sm font-medium text-white transition hover:brightness-110"
                       >
                         Go to tasks
                         <ChevronRight className="h-4 w-4" />
@@ -1630,452 +2085,21 @@ export default function HomePage() {
                   )}
                 </div>
               </div>
-            </div>
+            </GlassCard>
 
             <div className="space-y-6">
-              <div
-                className={`rounded-[30px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6 ${getCookedGlowClass(
-                  cooked.score
-                )}`}
-              >
-                <div className="flex items-center gap-2 text-sm text-slate-400">
-                  <Flame className="h-4 w-4 text-orange-300" />
-                  Score Breakdown
-                </div>
-
-                <div className="mt-4 flex items-end gap-3">
-                  <span
-                    className={`text-5xl font-semibold ${getCookedTextColor(
-                      cooked.score
-                    )}`}
-                  >
-                    {loading ? "..." : cooked.score}
-                  </span>
-                  <span className="pb-2 text-xl text-slate-500">/100</span>
-                </div>
-
-                <p className="mt-2 text-base font-medium text-white">
-                  {loading ? "Loading..." : cooked.status}
-                </p>
-
-                <p className="mt-2 text-sm text-slate-400">
-                  {loading
-                    ? "Loading your score..."
-                    : getMotivationLine(cooked.score, stats.pending, stats.overdue)}
-                </p>
-
-                <div className="mt-5 h-3 w-full overflow-hidden rounded-full bg-white/10">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${getCookedBarClass(
-                      cooked.score
-                    )}`}
-                    style={{
-                      width: `${Math.max(6, loading ? 6 : cooked.score)}%`,
-                    }}
-                  />
-                </div>
-
-                <ul className="mt-5 space-y-3">
-                  {(loading ? ["Loading your risk factors..."] : cooked.reasons)
-                    .slice(0, 4)
-                    .map((reason) => (
-                      <li
-                        key={reason}
-                        className="flex items-start gap-3 text-sm text-slate-200"
-                      >
-                        <span className="mt-2 h-2 w-2 rounded-full bg-blue-400" />
-                        <span>{reason}</span>
-                      </li>
-                    ))}
-                </ul>
-
-                <div className="mt-6">
-                  {bestRecoveryAction ? (
-                    <Link
-                      href={bestRecoveryAction.route}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
-                    >
-                      <Zap className="h-4 w-4" />
-                      Reduce My Score
-                    </Link>
-                  ) : (
-                    <Link
-                      href="/tasks"
-                      className="inline-flex w-full items-center justify-center rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
-                    >
-                      Add a Task
-                    </Link>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-[30px] border border-white/10 bg-[linear-gradient(135deg,#111827_0%,#0f172a_100%)] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
-                <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10">
-                  <Share2 className="h-3.5 w-3.5" />
-                  Shareable Moment
-                </div>
-
-                <h3 className="mt-4 text-2xl font-semibold text-white">
-                  Your latest flex
-                </h3>
-
-                <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-5">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                    Current snapshot
-                  </p>
-                  <h4 className="mt-2 text-2xl font-semibold text-white">
-                    {getRoastLabel(cooked.score)}
-                  </h4>
-                  <p className="mt-2 text-sm text-slate-300">
-                    You’re on {cooked.score}/100 with {stats.pending} active tasks and a{" "}
-                    {profile ? profile.streak : 0}-day streak.
-                  </p>
-
-                  <div className="mt-5 grid grid-cols-3 gap-3">
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                        Score
-                      </p>
-                      <p className="mt-2 text-xl font-semibold text-white">
-                        {cooked.score}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                        XP
-                      </p>
-                      <p className="mt-2 text-xl font-semibold text-white">
-                        {profile?.xp ?? 0}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                        Streak
-                      </p>
-                      <p className="mt-2 text-xl font-semibold text-white">
-                        {profile ? profile.streak : 0}
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleShareScore(cooked.score)}
-                    className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
-                  >
-                    <Share2 className="h-4 w-4" />
-                    Share this
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-[30px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-7">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="inline-flex items-center gap-2 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-400/20">
-                  <Trophy className="h-3.5 w-3.5" />
-                  Social Pressure
-                </div>
-                <h2 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
-                  Cooked Leaderboard
-                </h2>
-                <p className="mt-2 text-sm text-slate-400">
-                  {leaderboardHeadline}
-                </p>
-                {yourRank ? (
-                  <p className="mt-2 text-xs text-slate-500">
-                    Your current rank: #{yourRank}
-                  </p>
-                ) : null}
-              </div>
-
-              {isLoggedIn ? (
-                <button
-                  type="button"
-                  onClick={() => handleShareLeaderboard(sortedLeaderboard)}
-                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
-                >
-                  Share leaderboard
-                </button>
-              ) : null}
-            </div>
-
-            {isLoggedIn ? (
-              <>
-                <form
-                  onSubmit={handleAddFriend}
-                  className="mt-6 grid gap-3 md:grid-cols-[1fr_auto]"
-                >
-                  <input
-                    type="text"
-                    value={friendUsername}
-                    onChange={(e) => setFriendUsername(e.target.value)}
-                    placeholder="Add friend by username"
-                    className="rounded-2xl border border-white/10 bg-[#101b38] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
-                  />
-
-                  <button
-                    type="submit"
-                    disabled={addingFriend}
-                    className="rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {addingFriend ? "Adding..." : "Add friend"}
-                  </button>
-                </form>
-
-                <p className="mt-3 text-xs text-slate-500">
-                  Add friends by their LockdIn username.
-                </p>
-
-                {friendError ? (
-                  <p className="mt-3 text-sm text-rose-300">{friendError}</p>
-                ) : null}
-
-                {friendSuccess ? (
-                  <p className="mt-3 text-sm text-emerald-300">{friendSuccess}</p>
-                ) : null}
-
-                <div className="mt-5 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setLeaderboardMode("mostCooked")}
-                    className={`rounded-full px-4 py-2 text-sm transition ${
-                      leaderboardMode === "mostCooked"
-                        ? "bg-rose-500/15 text-rose-300 ring-1 ring-rose-400/20"
-                        : "bg-white/5 text-slate-300 hover:bg-white/10"
-                    }`}
-                  >
-                    Most Cooked
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLeaderboardMode("biggestComeback")}
-                    className={`rounded-full px-4 py-2 text-sm transition ${
-                      leaderboardMode === "biggestComeback"
-                        ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/20"
-                        : "bg-white/5 text-slate-300 hover:bg-white/10"
-                    }`}
-                  >
-                    Biggest Comeback
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLeaderboardMode("mostLockedIn")}
-                    className={`rounded-full px-4 py-2 text-sm transition ${
-                      leaderboardMode === "mostLockedIn"
-                        ? "bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/20"
-                        : "bg-white/5 text-slate-300 hover:bg-white/10"
-                    }`}
-                  >
-                    Most Locked In
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLeaderboardMode("mostActive")}
-                    className={`rounded-full px-4 py-2 text-sm transition ${
-                      leaderboardMode === "mostActive"
-                        ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/20"
-                        : "bg-white/5 text-slate-300 hover:bg-white/10"
-                    }`}
-                  >
-                    Most Active
-                  </button>
-                </div>
-
-                <div className="mt-5 space-y-3">
-                  {leaderboardLoading ? (
-                    <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                      Loading leaderboard...
-                    </div>
-                  ) : sortedLeaderboard.length === 0 ? (
-                    <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                      No one on the leaderboard yet. Add a friend by username to
-                      start the chaos.
-                    </div>
-                  ) : (
-                    sortedLeaderboard.slice(0, 5).map((entry, index) => (
-                      <div
-                        key={entry.id}
-                        className={`rounded-3xl border p-4 ${getLeaderboardAccent(
-                          entry.cookedScore
-                        )} ${entry.isYou ? "ring-1 ring-blue-400/30" : ""}`}
-                      >
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                #{entry.rank}
-                              </span>
-
-                              {index === 0 ? (
-                                <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1 text-xs text-amber-300">
-                                  <span className="inline-flex items-center gap-1">
-                                    <Crown className="h-3 w-3" />
-                                    Top
-                                  </span>
-                                </span>
-                              ) : null}
-
-                              <p className="break-words text-base font-semibold text-white">
-                                @{entry.username}
-                              </p>
-
-                              {entry.isYou ? (
-                                <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs text-blue-200">
-                                  You
-                                </span>
-                              ) : null}
-
-                              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                {entry.roastLabel}
-                              </span>
-                            </div>
-
-                            <p className="mt-2 text-sm text-slate-400">
-                              {entry.course} • {entry.university}
-                            </p>
-
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                {entry.pendingTasks} active task
-                                {entry.pendingTasks === 1 ? "" : "s"}
-                              </span>
-                              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                {entry.completionRate}% completion
-                              </span>
-                              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                {entry.streak} day streak
-                              </span>
-                              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                {entry.momentumLabel}
-                              </span>
-                              <span
-                                className={`rounded-full border px-3 py-1 text-xs ${
-                                  entry.weeklyCookedChange < 0
-                                    ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
-                                    : entry.weeklyCookedChange > 0
-                                    ? "border-rose-400/20 bg-rose-500/10 text-rose-300"
-                                    : "border-white/10 bg-white/5 text-slate-300"
-                                }`}
-                              >
-                                7d cooked: {entry.weeklyCookedChange > 0 ? "+" : ""}
-                                {entry.weeklyCookedChange}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="text-left sm:text-right">
-                            <p
-                              className={`text-3xl font-semibold sm:text-4xl ${getCookedTextColor(
-                                entry.cookedScore
-                              )}`}
-                            >
-                              {entry.cookedScore}
-                            </p>
-                            <p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                              cooked score
-                            </p>
-                            <p className="mt-2 text-sm text-slate-300">
-                              {entry.status}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-black/20">
-                          <div
-                            className={`h-full rounded-full ${getCookedBarClass(
-                              entry.cookedScore
-                            )}`}
-                            style={{
-                              width: `${Math.max(6, entry.cookedScore)}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className="mt-6 rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                Log in to start a cooked leaderboard with your friends.
-              </div>
-            )}
-          </section>
-
-          <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-            <div className="rounded-[30px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-xl font-semibold sm:text-2xl">Recent Tasks</h3>
-                  <p className="mt-2 text-sm text-slate-400">
-                    Your latest task activity and deadlines.
-                  </p>
-                </div>
-                <Link
-                  href="/tasks"
-                  className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
-                >
-                  View all
-                </Link>
-              </div>
-
-              <div className="mt-6 space-y-3">
-                {loading ? (
-                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                    Loading recent tasks...
-                  </div>
-                ) : stats.recent.length === 0 ? (
-                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                    No tasks yet. Add your first task to get started.
-                  </div>
-                ) : (
-                  stats.recent.map((task) => (
-                    <div
-                      key={task.id}
-                      className="rounded-2xl border border-white/10 bg-[#101b38] p-4"
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0">
-                          <p
-                            className={`break-words text-base font-medium ${
-                              task.completed ? "text-slate-500 line-through" : "text-white"
-                            }`}
-                          >
-                            {task.title}
-                          </p>
-                          <p className="mt-2 text-sm text-slate-400">{task.module}</p>
-                          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-500">
-                            <Clock3 className="h-4 w-4" />
-                            <span>Due: {task.dueDate}</span>
-                          </div>
-                        </div>
-
-                        <span
-                          className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
-                            task.priority
-                          )}`}
-                        >
-                          {task.priority}
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <div className="rounded-[30px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+              <GlassCard className="p-5 sm:p-6">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <h3 className="text-xl font-semibold sm:text-2xl">
+                    <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-medium text-emerald-300 ring-1 ring-emerald-400/20">
+                      <BookOpen className="h-3.5 w-3.5" />
+                      Planner Sync
+                    </div>
+                    <h3 className="mt-4 text-xl font-semibold sm:text-2xl">
                       Today’s Study Plan
                     </h3>
                     <p className="mt-2 text-sm text-slate-400">
-                      Your saved blocks for today, pulled from your planner.
+                      Your saved blocks for today, now matched more reliably.
                     </p>
                   </div>
                   <Link
@@ -2086,6 +2110,43 @@ export default function HomePage() {
                   </Link>
                 </div>
 
+                <div className="mt-5 grid grid-cols-3 gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                      Today
+                    </p>
+                    <p className="mt-2 text-xl font-semibold text-white">
+                      {studyBlocksLoading ? "..." : todaysStudyBlocks.length}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                      Completed
+                    </p>
+                    <p className="mt-2 text-xl font-semibold text-white">
+                      {studyBlocksLoading
+                        ? "..."
+                        : todaysStudyBlocks.filter((block) => block.completed).length}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                      Planned
+                    </p>
+                    <p className="mt-2 text-xl font-semibold text-white">
+                      {studyBlocksLoading
+                        ? "..."
+                        : todaysStudyBlocks
+                            .filter((block) => !block.completed)
+                            .reduce(
+                              (sum, block) => sum + Number(block.durationMinutes ?? 0),
+                              0
+                            )}
+                      {studyBlocksLoading ? "" : "m"}
+                    </p>
+                  </div>
+                </div>
+
                 <div className="mt-6 space-y-3">
                   {studyBlocksLoading ? (
                     <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
@@ -2093,10 +2154,12 @@ export default function HomePage() {
                     </div>
                   ) : todaysStudyBlocks.length === 0 ? (
                     <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                      No study blocks for today yet. Generate one in Planner.
+                      No study blocks matched today yet. If your planner has blocks, this
+                      home page now checks full day names, short day names, and even date
+                      values more reliably.
                     </div>
                   ) : (
-                    todaysStudyBlocks.slice(0, 4).map((block, index) => (
+                    todaysStudyBlocks.map((block, index) => (
                       <div
                         key={`${block.id}-${index}`}
                         className={`rounded-2xl border p-4 ${
@@ -2144,9 +2207,9 @@ export default function HomePage() {
                     ))
                   )}
                 </div>
-              </div>
+              </GlassCard>
 
-              <div className="rounded-[30px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+              <GlassCard className="p-5 sm:p-6">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <h3 className="text-xl font-semibold sm:text-2xl">Quick Access</h3>
@@ -2222,8 +2285,158 @@ export default function HomePage() {
                     </div>
                   </Link>
                 </div>
-              </div>
+              </GlassCard>
             </div>
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+            <GlassCard className="p-5 sm:p-8">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-xl font-semibold sm:text-2xl">Recent Tasks</h3>
+                  <p className="mt-2 text-sm text-slate-400">
+                    Your latest task activity and deadlines.
+                  </p>
+                </div>
+                <Link
+                  href="/tasks"
+                  className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
+                >
+                  View all
+                </Link>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                {loading ? (
+                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                    Loading recent tasks...
+                  </div>
+                ) : stats.recent.length === 0 ? (
+                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                    No tasks yet. Add your first task to get started.
+                  </div>
+                ) : (
+                  stats.recent.map((task) => (
+                    <div
+                      key={task.id}
+                      className="rounded-2xl border border-white/10 bg-[#101b38] p-4"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p
+                            className={`break-words text-base font-medium ${
+                              task.completed ? "text-slate-500 line-through" : "text-white"
+                            }`}
+                          >
+                            {task.title}
+                          </p>
+                          <p className="mt-2 text-sm text-slate-400">{task.module}</p>
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+                            <Clock3 className="h-4 w-4" />
+                            <span>Due: {task.dueDate}</span>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
+                            task.priority
+                          )}`}
+                        >
+                          {task.priority}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </GlassCard>
+
+            <GlassCard className="p-5 sm:p-8">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-xl font-semibold sm:text-2xl">Momentum Panel</h3>
+                  <p className="mt-2 text-sm text-slate-400">
+                    Your study rhythm, planner consistency, and current position.
+                  </p>
+                </div>
+                <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
+                  Live summary
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3">
+                      <TimerReset className="h-5 w-5 text-blue-300" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-400">Planner completion</p>
+                      <p className="text-2xl font-semibold text-white">
+                        {stats.plannerCompletionRate}%
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3">
+                      <CheckCircle2 className="h-5 w-5 text-emerald-300" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-400">Completed blocks</p>
+                      <p className="text-2xl font-semibold text-white">
+                        {stats.completedStudyBlocks}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3">
+                      <TrendingUp className="h-5 w-5 text-amber-300" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-400">Open study blocks</p>
+                      <p className="text-2xl font-semibold text-white">
+                        {stats.openStudyBlocks}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-2xl border border-fuchsia-400/20 bg-fuchsia-500/10 p-3">
+                      <Star className="h-5 w-5 text-fuchsia-300" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-400">Best next move</p>
+                      <p className="text-base font-semibold text-white">
+                        {bestRecoveryAction?.label ?? "Stay consistent"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {stats.nextTask ? (
+                <div className="mt-6 rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(59,130,246,0.14),rgba(15,23,42,0.95))] p-5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                    Next deadline
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-white">
+                    {stats.nextTask.title}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-300">
+                    {stats.nextTask.module} •{" "}
+                    {getUpcomingLabel(getDaysUntil(stats.nextTask.dueDate))}
+                  </p>
+                </div>
+              ) : null}
+            </GlassCard>
           </section>
 
           {isLoadingPage ? (
