@@ -113,6 +113,19 @@ type LeaderboardEntry = {
   roastLabel: string;
 };
 
+type DatabaseStudyBlock = {
+  id: string;
+  user_id: string;
+  day: string;
+  time: string;
+  subject: string;
+  focus: string;
+  task_id: string | null;
+  duration_minutes: number;
+  completed: boolean;
+  location: string;
+};
+
 const STUDY_PLAN_STORAGE_KEY = "lockdin_study_plan";
 
 function getDaysUntil(dateString: string) {
@@ -398,6 +411,7 @@ export default function HomePage() {
   const { tasks: providerTasks, loading } = useTasks();
 
   const [studyBlocks, setStudyBlocks] = useState<StudyBlock[]>([]);
+  const [studyBlocksLoading, setStudyBlocksLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [profile, setProfile] = useState<HomeProfile | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -413,6 +427,54 @@ export default function HomePage() {
   const [friendSuccess, setFriendSuccess] = useState("");
 
   const [shareMessage, setShareMessage] = useState("");
+
+  async function loadStudyBlocks(userId: string) {
+    try {
+      setStudyBlocksLoading(true);
+
+      const { data, error } = await supabase
+        .from("study_plan_blocks")
+        .select("*")
+        .eq("user_id", userId)
+        .order("day", { ascending: true })
+        .order("time", { ascending: true });
+
+      if (error) {
+        console.error("Error loading study blocks:", error.message);
+
+        if (typeof window !== "undefined") {
+          const fallback = safeParseArray<StudyBlock>(
+            localStorage.getItem(STUDY_PLAN_STORAGE_KEY)
+          );
+          setStudyBlocks(fallback);
+        } else {
+          setStudyBlocks([]);
+        }
+        return;
+      }
+
+      const mapped: StudyBlock[] = ((data ?? []) as DatabaseStudyBlock[]).map(
+        (block) => ({
+          id: block.id,
+          day: block.day,
+          time: block.time,
+          subject: block.subject,
+          focus: block.focus,
+          taskId: block.task_id,
+          durationMinutes: block.duration_minutes,
+          completed: block.completed,
+          location: block.location,
+        })
+      );
+
+      setStudyBlocks(mapped);
+    } catch (error) {
+      console.error("Unexpected study blocks error:", error);
+      setStudyBlocks([]);
+    } finally {
+      setStudyBlocksLoading(false);
+    }
+  }
 
   async function loadLeaderboard(userId: string) {
     try {
@@ -763,6 +825,8 @@ export default function HomePage() {
         setProfile(null);
         setLeaderboard([]);
         setLeaderboardLoading(false);
+        setStudyBlocks([]);
+        setStudyBlocksLoading(false);
         return;
       }
 
@@ -796,7 +860,7 @@ export default function HomePage() {
       if (!mounted) return;
 
       setProfile(syncedProfile);
-      await loadLeaderboard(user.id);
+      await Promise.all([loadLeaderboard(user.id), loadStudyBlocks(user.id)]);
     }
 
     void checkAuthAndProfile();
@@ -814,6 +878,8 @@ export default function HomePage() {
         setProfile(null);
         setLeaderboard([]);
         setLeaderboardLoading(false);
+        setStudyBlocks([]);
+        setStudyBlocksLoading(false);
         return;
       }
 
@@ -822,11 +888,6 @@ export default function HomePage() {
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        if (typeof window !== "undefined") {
-          setStudyBlocks(
-            safeParseArray<StudyBlock>(localStorage.getItem(STUDY_PLAN_STORAGE_KEY))
-          );
-        }
         void checkAuthAndProfile();
       }
     };
@@ -1092,7 +1153,7 @@ export default function HomePage() {
   const xpNeededForNextLevel = getXpNeededForNextLevel();
   const levelProgress = Math.min((xpIntoLevel / xpNeededForNextLevel) * 100, 100);
 
-  const isLoadingPage = loading || leaderboardLoading;
+  const isLoadingPage = loading || leaderboardLoading || studyBlocksLoading;
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#030712] text-white">
@@ -1101,13 +1162,13 @@ export default function HomePage() {
 
       <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
         <div className="space-y-6">
-          <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,#07111f_0%,#091427_100%)] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:p-8">
-            <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+          <section className="overflow-hidden rounded-[34px] border border-white/10 bg-[linear-gradient(180deg,#07111f_0%,#091427_100%)] p-5 shadow-[0_28px_100px_rgba(0,0,0,0.42)] sm:p-8">
+            <div className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
               <div className="min-w-0">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-300 sm:text-sm">
                     <Sparkles className="h-4 w-4 text-blue-300" />
-                    Built for students who need to lock in
+                    Built for students who actually want to win the semester
                   </div>
 
                   {isLoggedIn && profile ? (
@@ -1134,14 +1195,15 @@ export default function HomePage() {
                   )}
                 </div>
 
-                <div className="mt-6 max-w-3xl">
+                <div className="mt-7 max-w-3xl">
                   <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-5xl xl:text-6xl">
-                    Your semester,
-                    <br className="hidden sm:block" /> under control.
+                    Stay ahead.
+                    <br className="hidden sm:block" />
+                    Don’t get cooked.
                   </h1>
                   <p className="mt-4 max-w-2xl text-base leading-8 text-slate-300 sm:text-lg">
-                    See what matters today, how cooked you are, what to study next,
-                    and where you stand against your friends.
+                    See what matters today, how much pressure you are under, what to
+                    study next, and how you stack up against your friends.
                   </p>
                 </div>
 
@@ -1248,6 +1310,7 @@ export default function HomePage() {
                 )}`}
               >
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.14),transparent_48%)]" />
+
                 <div className="relative">
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -1364,13 +1427,21 @@ export default function HomePage() {
                     </button>
                   </div>
 
-                  <div className="mt-5 rounded-[24px] border border-white/10 bg-white p-4">
+                  <div className="mt-6 flex items-center justify-between rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] px-4 py-3">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                        Powered by
+                      </p>
+                      <p className="mt-1 text-sm font-medium text-white">
+                        LockdIn
+                      </p>
+                    </div>
                     <Image
                       src="/logo.png"
                       alt="LockdIn logo"
-                      width={260}
-                      height={260}
-                      className="mx-auto h-auto w-[130px] object-contain sm:w-[155px]"
+                      width={110}
+                      height={110}
+                      className="h-auto w-[74px] object-contain opacity-95"
                       priority
                     />
                   </div>
@@ -2000,7 +2071,7 @@ export default function HomePage() {
                       Today’s Study Plan
                     </h3>
                     <p className="mt-2 text-sm text-slate-400">
-                      Your blocks for today, so you know what’s next.
+                      Your saved blocks for today, pulled from your planner.
                     </p>
                   </div>
                   <Link
@@ -2012,30 +2083,57 @@ export default function HomePage() {
                 </div>
 
                 <div className="mt-6 space-y-3">
-                  {todaysStudyBlocks.length === 0 ? (
+                  {studyBlocksLoading ? (
                     <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                      No study blocks for today yet. Add one before you drift.
+                      Loading today’s plan...
+                    </div>
+                  ) : todaysStudyBlocks.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                      No study blocks for today yet. Generate one in Planner.
                     </div>
                   ) : (
                     todaysStudyBlocks.slice(0, 4).map((block, index) => (
                       <div
-                        key={`${block.day}-${block.time}-${index}`}
-                        className="rounded-2xl border border-white/10 bg-[#101b38] p-4"
+                        key={`${block.id}-${index}`}
+                        className={`rounded-2xl border p-4 ${
+                          block.completed
+                            ? "border-emerald-400/15 bg-emerald-500/[0.06]"
+                            : "border-white/10 bg-[#101b38]"
+                        }`}
                       >
                         <div className="flex items-center justify-between gap-4">
                           <div className="min-w-0">
-                            <p className="text-base font-medium text-white">
+                            <p
+                              className={`text-base font-medium ${
+                                block.completed ? "text-slate-400 line-through" : "text-white"
+                              }`}
+                            >
                               {block.subject}
                             </p>
                             <p className="mt-2 text-sm text-slate-400">
                               {block.focus}
                             </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                                {block.location}
+                              </span>
+                              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                                {block.durationMinutes} mins
+                              </span>
+                              <span
+                                className={`rounded-full px-3 py-1 text-xs ${
+                                  block.completed
+                                    ? "border border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
+                                    : "border border-blue-400/20 bg-blue-500/10 text-blue-300"
+                                }`}
+                              >
+                                {block.completed ? "Completed" : "Planned"}
+                              </span>
+                            </div>
                           </div>
                           <div className="text-right">
                             <p className="text-sm font-medium text-white">{block.time}</p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              {block.durationMinutes} mins
-                            </p>
+                            <p className="mt-1 text-xs text-slate-500">{block.day}</p>
                           </div>
                         </div>
                       </div>
