@@ -4,6 +4,23 @@ import { useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { useTasks } from "@/components/TasksProvider";
 import { useStudyPlan } from "@/components/StudyPlanProvider";
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  BookOpen,
+  Brain,
+  CalendarDays,
+  CheckCircle2,
+  ChevronRight,
+  Clock3,
+  Flame,
+  Gauge,
+  Info,
+  Layers3,
+  Sparkles,
+  Target,
+  TrendingUp,
+} from "lucide-react";
 
 type Priority = "High" | "Medium" | "Low";
 
@@ -84,9 +101,9 @@ function priorityWeight(priority: Priority) {
 }
 
 function getPriorityClass(priority: Priority) {
-  if (priority === "High") return "bg-rose-500/15 text-rose-300";
-  if (priority === "Medium") return "bg-amber-500/15 text-amber-300";
-  return "bg-emerald-500/15 text-emerald-300";
+  if (priority === "High") return "border-rose-500/20 bg-rose-500/10 text-rose-300";
+  if (priority === "Medium") return "border-amber-500/20 bg-amber-500/10 text-amber-300";
+  return "border-emerald-500/20 bg-emerald-500/10 text-emerald-300";
 }
 
 function getCookedStatus(score: number) {
@@ -428,49 +445,53 @@ function getRankedRecoveryActions(
 function getCookedTone(score: number) {
   if (score >= 80) {
     return {
-      pill: "bg-rose-500/15 text-rose-300",
+      pill: "border-rose-500/20 bg-rose-500/10 text-rose-300",
       bar: "bg-rose-500",
+      glow: "shadow-[0_0_40px_rgba(244,63,94,0.16)]",
     };
   }
   if (score >= 60) {
     return {
-      pill: "bg-orange-500/15 text-orange-300",
+      pill: "border-orange-500/20 bg-orange-500/10 text-orange-300",
       bar: "bg-orange-500",
+      glow: "shadow-[0_0_40px_rgba(249,115,22,0.14)]",
     };
   }
   if (score >= 40) {
     return {
-      pill: "bg-amber-500/15 text-amber-300",
+      pill: "border-amber-500/20 bg-amber-500/10 text-amber-300",
       bar: "bg-amber-500",
+      glow: "shadow-[0_0_40px_rgba(245,158,11,0.12)]",
     };
   }
   return {
-    pill: "bg-emerald-500/15 text-emerald-300",
+    pill: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
     bar: "bg-emerald-500",
+    glow: "shadow-[0_0_40px_rgba(16,185,129,0.12)]",
   };
 }
 
 function getPositiveScoreTone(score: number) {
   if (score >= 80) {
     return {
-      pill: "bg-emerald-500/15 text-emerald-300",
+      pill: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
       bar: "bg-emerald-500",
     };
   }
   if (score >= 60) {
     return {
-      pill: "bg-lime-500/15 text-lime-300",
+      pill: "border-lime-500/20 bg-lime-500/10 text-lime-300",
       bar: "bg-lime-500",
     };
   }
   if (score >= 40) {
     return {
-      pill: "bg-amber-500/15 text-amber-300",
+      pill: "border-amber-500/20 bg-amber-500/10 text-amber-300",
       bar: "bg-amber-500",
     };
   }
   return {
-    pill: "bg-rose-500/15 text-rose-300",
+    pill: "border-rose-500/20 bg-rose-500/10 text-rose-300",
     bar: "bg-rose-500",
   };
 }
@@ -489,6 +510,17 @@ function getConsistencyLabel(score: number) {
   return "Chaotic";
 }
 
+function formatDueLabel(date: string) {
+  const days = getDaysUntil(date);
+
+  if (days < 0) {
+    return `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`;
+  }
+  if (days === 0) return "Due today";
+  if (days === 1) return "Due tomorrow";
+  return `Due in ${days} days`;
+}
+
 function InfoIconButton({
   onClick,
   isOpen,
@@ -500,15 +532,38 @@ function InfoIconButton({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs transition ${
+      className={`inline-flex h-9 w-9 items-center justify-center rounded-full border transition ${
         isOpen
-          ? "border-blue-500/40 bg-blue-500/15 text-blue-300"
+          ? "border-blue-500/30 bg-blue-500/10 text-blue-300"
           : "border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:text-white"
       }`}
       aria-label="Show score info"
     >
-      i
+      <Info className="h-4 w-4" />
     </button>
+  );
+}
+
+function MetricCard({
+  icon,
+  title,
+  value,
+  subtitle,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  value: string | number;
+  subtitle?: string;
+}) {
+  return (
+    <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+      <div className="flex items-center gap-3">
+        <div className="rounded-2xl bg-white/5 p-2.5 text-slate-200">{icon}</div>
+        <p className="text-sm text-slate-400">{title}</p>
+      </div>
+      <p className="mt-4 text-3xl font-bold tracking-tight text-white">{value}</p>
+      {subtitle ? <p className="mt-2 text-xs text-slate-500">{subtitle}</p> : null}
+    </div>
   );
 }
 
@@ -526,6 +581,7 @@ function ScoreCard({
   infoTitle,
   infoBody,
   tips,
+  icon,
 }: {
   title: string;
   score: number;
@@ -540,21 +596,26 @@ function ScoreCard({
   infoTitle: string;
   infoBody: string;
   tips: string[];
+  icon: React.ReactNode;
 }) {
   return (
     <div
-      className={`rounded-3xl border bg-slate-900 p-6 transition ${
+      className={`rounded-[28px] border bg-white/5 p-5 backdrop-blur-xl transition ${
         isActive
           ? "border-blue-500/40 ring-1 ring-blue-500/30"
-          : "border-slate-800 hover:border-slate-700"
+          : "border-white/10 hover:border-white/15"
       }`}
     >
       <div className="flex items-start justify-between gap-4">
         <button type="button" onClick={onActivate} className="flex-1 text-left">
-          <p className="text-sm text-slate-400">{title}</p>
-          <div className="mt-3 flex items-end gap-3">
-            <p className="text-4xl font-bold">{score}</p>
-            <span className={`rounded-full px-3 py-1 text-xs font-medium ${accentPillClass}`}>
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-white/5 p-2.5 text-slate-200">{icon}</div>
+            <p className="text-sm text-slate-400">{title}</p>
+          </div>
+
+          <div className="mt-4 flex items-end gap-3">
+            <p className="text-4xl font-bold text-white">{score}</p>
+            <span className={`rounded-full border px-3 py-1 text-xs font-medium ${accentPillClass}`}>
               {label}
             </span>
           </div>
@@ -564,9 +625,9 @@ function ScoreCard({
       </div>
 
       <button type="button" onClick={onActivate} className="mt-4 block w-full text-left">
-        <div className="h-2 rounded-full bg-slate-800">
+        <div className="h-2.5 rounded-full bg-slate-800">
           <div
-            className={`h-2 rounded-full ${barClass} transition-all duration-500`}
+            className={`h-2.5 rounded-full ${barClass} transition-all duration-500`}
             style={{ width: `${score}%` }}
           />
         </div>
@@ -574,22 +635,24 @@ function ScoreCard({
         <p className="mt-4 text-sm leading-6 text-slate-300">{subtitle}</p>
       </button>
 
-      {infoOpen && (
+      {infoOpen ? (
         <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/80 p-4">
           <p className="text-sm font-semibold text-white">{infoTitle}</p>
           <p className="mt-2 text-sm leading-6 text-slate-300">{infoBody}</p>
         </div>
-      )}
+      ) : null}
 
       <div className="mt-4 rounded-2xl border border-white/5 bg-slate-950/70 p-4">
         <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
           Best way to improve it
         </p>
-        <ul className="mt-3 space-y-2 text-sm text-slate-300">
+        <div className="mt-3 space-y-2">
           {tips.map((tip) => (
-            <li key={tip}>• {tip}</li>
+            <p key={tip} className="text-sm text-slate-300">
+              • {tip}
+            </p>
           ))}
-        </ul>
+        </div>
       </div>
     </div>
   );
@@ -606,7 +669,7 @@ function DeltaPill({
 }) {
   if (value === 0) {
     return (
-      <span className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-400">
+      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-400">
         {label} 0
       </span>
     );
@@ -617,10 +680,10 @@ function DeltaPill({
 
   return (
     <span
-      className={`rounded-full px-3 py-1 text-xs font-medium ${
+      className={`rounded-full border px-3 py-1 text-xs font-medium ${
         good
-          ? "bg-emerald-500/15 text-emerald-300"
-          : "bg-rose-500/15 text-rose-300"
+          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+          : "border-rose-500/20 bg-rose-500/10 text-rose-300"
       }`}
     >
       {label} {isPositive ? "+" : ""}
@@ -1011,79 +1074,129 @@ export default function PerformancePage() {
 
   return (
     <AppShell>
-      <div className="min-h-screen bg-slate-950 p-8 text-white">
-        <div className="mx-auto max-w-7xl space-y-8">
-          <section className="rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.18),_transparent_35%),linear-gradient(180deg,#08122b_0%,#061021_100%)] p-8 shadow-[0_20px_80px_rgba(0,0,0,0.35)]">
-            <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
-              Performance
-            </p>
-            <h1 className="mt-4 text-4xl font-semibold tracking-tight md:text-5xl">
-              LockdIn performance dashboard
-            </h1>
-            <p className="mt-4 max-w-3xl text-lg leading-8 text-slate-300">
-              Track momentum, consistency, and how cooked you actually are based on
-              live deadlines, workload pressure, and planner follow-through.
-            </p>
+      <div className="min-h-screen bg-slate-950 px-4 py-6 text-white md:px-8 md:py-8">
+        <div className="mx-auto max-w-7xl space-y-6">
+          <section className="relative overflow-hidden rounded-[34px] border border-white/10 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 p-5 shadow-[0_20px_80px_rgba(0,0,0,0.45)] md:p-8">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.18),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(168,85,247,0.14),transparent_24%)]" />
+
+            <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+              <div className="max-w-3xl">
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Live performance analysis
+                </div>
+
+                <h1 className="text-3xl font-bold tracking-tight md:text-5xl">
+                  Performance Dashboard
+                </h1>
+
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
+                  See how cooked you are, where your momentum stands, and what action
+                  moves your performance the fastest.
+                </p>
+
+                <div className="mt-5 flex flex-wrap items-center gap-3">
+                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
+                    {loading ? "..." : analytics.pendingTasks} active tasks
+                  </div>
+                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
+                    {loading ? "..." : analytics.totalSessions} study blocks
+                  </div>
+                  <div className={`rounded-full border px-3 py-1 text-xs font-medium ${cookedTone.pill}`}>
+                    {loading ? "Loading..." : analytics.cooked.status}
+                  </div>
+                </div>
+              </div>
+
+              <div className={`rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl lg:w-[360px] ${cookedTone.glow}`}>
+                <p className="text-sm text-slate-400">Live cooked pressure</p>
+                <div className="mt-3 flex items-end gap-3">
+                  <p className="text-5xl font-bold text-white">
+                    {loading ? "..." : analytics.cooked.score}
+                  </p>
+                  <span className={`rounded-full border px-3 py-1 text-xs font-medium ${cookedTone.pill}`}>
+                    {loading ? "Loading" : analytics.cooked.status}
+                  </span>
+                </div>
+
+                <div className="mt-5 h-3 rounded-full bg-slate-800">
+                  <div
+                    className={`h-3 rounded-full ${cookedTone.bar} transition-all duration-500`}
+                    style={{ width: `${loading ? 0 : analytics.cooked.score}%` }}
+                  />
+                </div>
+
+                <p className="mt-4 text-sm leading-6 text-slate-300">
+                  {loading ? "Loading cooked score analysis..." : analytics.cooked.headline}
+                </p>
+              </div>
+            </div>
           </section>
 
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
-              <p className="text-sm text-slate-400">Task Completion</p>
-              <p className="mt-3 text-4xl font-bold">
-                {loading ? "..." : analytics.taskCompletionRate}%
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
-              <p className="text-sm text-slate-400">Planner Completion</p>
-              <p className="mt-3 text-4xl font-bold">
-                {loading ? "..." : analytics.plannerCompletionRate}%
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
-              <p className="text-sm text-slate-400">Planned Hours</p>
-              <p className="mt-3 text-4xl font-bold">
-                {loading ? "..." : analytics.totalPlannedHours}h
-              </p>
-            </div>
-
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <MetricCard
+              icon={<CheckCircle2 className="h-5 w-5" />}
+              title="Task Completion"
+              value={loading ? "..." : `${analytics.taskCompletionRate}%`}
+            />
+            <MetricCard
+              icon={<CalendarDays className="h-5 w-5" />}
+              title="Planner Completion"
+              value={loading ? "..." : `${analytics.plannerCompletionRate}%`}
+            />
+            <MetricCard
+              icon={<Clock3 className="h-5 w-5" />}
+              title="Planned Hours"
+              value={loading ? "..." : `${analytics.totalPlannedHours}h`}
+            />
+            <MetricCard
+              icon={<AlertTriangle className="h-5 w-5" />}
+              title="Overdue Tasks"
+              value={loading ? "..." : analytics.overdueTasks}
+            />
             <button
               type="button"
               onClick={() => handleFilterClick("cooked")}
-              className={`rounded-3xl border bg-slate-900 p-6 text-left transition ${
+              className={`rounded-[28px] border bg-white/5 p-5 text-left backdrop-blur-xl transition ${
                 activeFilter === "cooked"
                   ? "border-blue-500/40 ring-1 ring-blue-500/30"
-                  : "border-slate-800 hover:border-slate-700"
+                  : "border-white/10 hover:border-white/15"
               }`}
             >
-              <p className="text-sm text-slate-400">Cooked Score</p>
-              <div className="mt-3 flex items-end gap-3">
-                <p className="text-4xl font-bold">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-white/5 p-2.5 text-slate-200">
+                  <Gauge className="h-5 w-5" />
+                </div>
+                <p className="text-sm text-slate-400">Cooked Score</p>
+              </div>
+              <div className="mt-4 flex items-end gap-3">
+                <p className="text-3xl font-bold text-white">
                   {loading ? "..." : analytics.cooked.score}
                 </p>
-                <span className={`rounded-full px-3 py-1 text-xs font-medium ${cookedTone.pill}`}>
-                  {loading ? "Loading" : analytics.cooked.status}
+                <span className={`rounded-full border px-3 py-1 text-xs font-medium ${cookedTone.pill}`}>
+                  {loading ? "..." : analytics.cooked.status}
                 </span>
               </div>
             </button>
           </section>
 
           <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8">
-              <div className="inline-flex rounded-full bg-blue-500/15 px-3 py-1 text-xs font-medium text-blue-300">
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl md:p-6">
+              <div className="inline-flex rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
                 AI Performance Coach
               </div>
-              <h2 className="mt-4 text-3xl font-semibold">
+
+              <h2 className="mt-4 text-2xl font-semibold text-white md:text-3xl">
                 {loading ? "Loading your performance..." : analytics.coachTitle}
               </h2>
-              <p className="mt-4 max-w-3xl text-base leading-8 text-slate-300">
+
+              <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300 md:text-base">
                 {loading
                   ? "Syncing your tasks and planner data."
                   : analytics.coachSummary}
               </p>
 
-              <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/60 p-5">
+              <div className="mt-6 rounded-[24px] border border-white/10 bg-slate-950/60 p-5">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
                   Recommended next step
                 </p>
@@ -1093,41 +1206,15 @@ export default function PerformancePage() {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm text-slate-400">Live cooked pressure</p>
-                  <div className="mt-3 flex items-end gap-3">
-                    <p className="text-5xl font-bold">
-                      {loading ? "..." : analytics.cooked.score}
-                    </p>
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-medium ${cookedTone.pill}`}
-                    >
-                      {loading ? "Loading" : analytics.cooked.status}
-                    </span>
-                  </div>
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl md:p-6">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-white/5 p-2.5 text-slate-200">
+                  <Flame className="h-5 w-5" />
                 </div>
+                <p className="text-sm text-slate-400">Pressure reasons</p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => handleFilterClick("cooked")}
-                className="mt-5 block w-full text-left"
-              >
-                <div className="h-3 rounded-full bg-slate-800">
-                  <div
-                    className={`h-3 rounded-full ${cookedTone.bar} transition-all duration-500`}
-                    style={{ width: `${loading ? 0 : analytics.cooked.score}%` }}
-                  />
-                </div>
-              </button>
-
-              <p className="mt-5 text-sm leading-7 text-slate-300">
-                {loading ? "Loading cooked score analysis..." : analytics.cooked.headline}
-              </p>
-
-              <div className="mt-6 grid gap-3">
+              <div className="mt-5 space-y-3">
                 {(loading ? ["Loading pressure reasons..."] : analytics.cooked.reasons).map(
                   (reason) => (
                     <div
@@ -1140,8 +1227,8 @@ export default function PerformancePage() {
                 )}
               </div>
 
-              {!loading && analytics.bestRecoveryAction && (
-                <div className="mt-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+              {!loading && analytics.bestRecoveryAction ? (
+                <div className="mt-5 rounded-[24px] border border-emerald-500/20 bg-emerald-500/10 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-emerald-300">
                     Best recovery action
                   </p>
@@ -1152,7 +1239,7 @@ export default function PerformancePage() {
                     Potential score drop: {analytics.bestRecoveryAction.scoreDrop}
                   </p>
                 </div>
-              )}
+              ) : null}
             </div>
           </section>
 
@@ -1175,6 +1262,7 @@ export default function PerformancePage() {
                 "Clear tasks due today or tomorrow",
                 "Reduce your open task pile",
               ]}
+              icon={<Flame className="h-5 w-5" />}
             />
 
             <ScoreCard
@@ -1195,6 +1283,7 @@ export default function PerformancePage() {
                 "Complete your next study block",
                 "Keep overdue tasks at zero",
               ]}
+              icon={<TrendingUp className="h-5 w-5" />}
             />
 
             <ScoreCard
@@ -1215,10 +1304,11 @@ export default function PerformancePage() {
                 "Reduce open tasks due today or tomorrow",
                 "Complete sessions instead of regenerating the plan",
               ]}
+              icon={<Brain className="h-5 w-5" />}
             />
           </section>
 
-          <section className="sticky top-4 z-10 rounded-3xl border border-slate-800 bg-slate-900/90 p-4 backdrop-blur">
+          <section className="sticky top-4 z-10 rounded-[28px] border border-white/10 bg-slate-900/90 p-4 backdrop-blur-xl">
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-sm text-slate-400">Focus filter:</span>
 
@@ -1235,10 +1325,10 @@ export default function PerformancePage() {
                   key={item.key}
                   type="button"
                   onClick={() => setActiveFilter(item.key as ActiveFilter)}
-                  className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                  className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
                     activeFilter === item.key
-                      ? "bg-blue-500 text-white"
-                      : "bg-white/5 text-slate-300 hover:bg-white/10"
+                      ? "border-blue-400/20 bg-blue-500/10 text-blue-300"
+                      : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
                   }`}
                 >
                   {item.label}
@@ -1247,20 +1337,22 @@ export default function PerformancePage() {
             </div>
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[1fr_1fr_1fr]">
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
+          <section className="grid gap-6 xl:grid-cols-3">
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
               <p className="text-sm text-slate-400">Biggest Threat</p>
               {loading ? (
-                <p className="mt-3 text-slate-400">Loading threat analysis...</p>
+                <p className="mt-4 text-slate-400">Loading threat analysis...</p>
               ) : analytics.biggestThreat ? (
                 <>
-                  <p className="mt-3 text-xl font-semibold">{analytics.biggestThreat.title}</p>
+                  <p className="mt-4 text-xl font-semibold text-white">
+                    {analytics.biggestThreat.title}
+                  </p>
                   <p className="mt-2 text-sm text-slate-400">
-                    {analytics.biggestThreat.module} • Due {analytics.biggestThreat.dueDate}
+                    {analytics.biggestThreat.module} • {formatDueLabel(analytics.biggestThreat.dueDate)}
                   </p>
                   <div className="mt-4">
                     <span
-                      className={`rounded-full px-3 py-1 text-xs font-medium ${getPriorityClass(
+                      className={`rounded-full border px-3 py-1 text-xs font-medium ${getPriorityClass(
                         analytics.biggestThreat.priority
                       )}`}
                     >
@@ -1269,11 +1361,11 @@ export default function PerformancePage() {
                   </div>
                 </>
               ) : (
-                <p className="mt-3 text-slate-400">No immediate threats right now.</p>
+                <p className="mt-4 text-slate-400">No immediate threats right now.</p>
               )}
             </div>
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
               <p className="text-sm text-slate-400">Today Focus</p>
               <div className="mt-4 space-y-3">
                 {loading ? (
@@ -1291,7 +1383,7 @@ export default function PerformancePage() {
                       </p>
                       <p className="mt-2 font-medium text-white">{task.title}</p>
                       <p className="mt-1 text-sm text-slate-400">
-                        {task.module} • Due {task.dueDate}
+                        {task.module} • {formatDueLabel(task.dueDate)}
                       </p>
                     </div>
                   ))
@@ -1299,7 +1391,7 @@ export default function PerformancePage() {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
               <p className="text-sm text-slate-400">Pressure Snapshot</p>
 
               <div className="mt-5 space-y-4">
@@ -1307,7 +1399,7 @@ export default function PerformancePage() {
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
                     Overdue tasks
                   </p>
-                  <p className="mt-2 text-3xl font-bold">
+                  <p className="mt-2 text-3xl font-bold text-white">
                     {loading ? "..." : analytics.overdueTasks}
                   </p>
                 </div>
@@ -1316,7 +1408,7 @@ export default function PerformancePage() {
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
                     Due this week
                   </p>
-                  <p className="mt-2 text-3xl font-bold">
+                  <p className="mt-2 text-3xl font-bold text-white">
                     {loading ? "..." : analytics.dueThisWeek}
                   </p>
                 </div>
@@ -1325,7 +1417,7 @@ export default function PerformancePage() {
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
                     Active workload
                   </p>
-                  <p className="mt-2 text-3xl font-bold">
+                  <p className="mt-2 text-3xl font-bold text-white">
                     {loading ? "..." : analytics.pendingTasks}
                   </p>
                 </div>
@@ -1334,10 +1426,10 @@ export default function PerformancePage() {
           </section>
 
           <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8">
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl md:p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-2xl font-semibold">Top Recovery Moves</h2>
+                  <h2 className="text-2xl font-semibold text-white">Top Recovery Moves</h2>
                   <p className="mt-2 text-sm text-slate-400">
                     The fastest ways to improve your scores right now
                   </p>
@@ -1346,18 +1438,18 @@ export default function PerformancePage() {
 
               <div className="mt-6 space-y-4">
                 {loading ? (
-                  <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
+                  <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5 text-slate-400">
                     Loading recovery moves...
                   </div>
                 ) : analytics.rankedRecoveryActions.length === 0 ? (
-                  <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
+                  <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5 text-slate-400">
                     Nothing to recover right now. You are suspiciously locked in.
                   </div>
                 ) : (
                   analytics.rankedRecoveryActions.map((action, index) => (
                     <div
                       key={`${action.type}-${action.id}`}
-                      className="rounded-2xl border border-slate-800 bg-slate-950 p-5"
+                      className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5"
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div>
@@ -1368,11 +1460,11 @@ export default function PerformancePage() {
                             {action.label}
                           </p>
                           <p className="mt-2 text-sm text-slate-400">
-                            Route: {action.route}
+                            Best place to do it: {action.route}
                           </p>
                         </div>
 
-                        <span className="rounded-full bg-blue-500/15 px-3 py-1 text-xs font-medium text-blue-300">
+                        <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
                           Impact {action.impactScore}
                         </span>
                       </div>
@@ -1398,34 +1490,34 @@ export default function PerformancePage() {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8">
-              <h2 className="text-2xl font-semibold">Pressure Signals</h2>
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl md:p-6">
+              <h2 className="text-2xl font-semibold text-white">Pressure Signals</h2>
 
               <div className="mt-6 space-y-4">
-                <div className="rounded-2xl bg-slate-950 p-5">
+                <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5">
                   <p className="text-sm text-slate-400">Most Pressured Module</p>
-                  <p className="mt-2 text-lg font-semibold">
+                  <p className="mt-2 text-lg font-semibold text-white">
                     {loading ? "Loading..." : analytics.mostPressuredModule?.module ?? "No data yet"}
                   </p>
                 </div>
 
-                <div className="rounded-2xl bg-slate-950 p-5">
+                <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5">
                   <p className="text-sm text-slate-400">Strongest Module</p>
-                  <p className="mt-2 text-lg font-semibold">
+                  <p className="mt-2 text-lg font-semibold text-white">
                     {loading ? "Loading..." : analytics.strongestModule?.module ?? "No data yet"}
                   </p>
                 </div>
 
-                <div className="rounded-2xl bg-slate-950 p-5">
+                <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5">
                   <p className="text-sm text-slate-400">High Priority Open</p>
-                  <p className="mt-2 text-lg font-semibold">
+                  <p className="mt-2 text-lg font-semibold text-white">
                     {loading ? "..." : analytics.highPriorityOpen}
                   </p>
                 </div>
 
-                <div className="rounded-2xl bg-slate-950 p-5">
+                <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5">
                   <p className="text-sm text-slate-400">Sessions Planned</p>
-                  <p className="mt-2 text-lg font-semibold">
+                  <p className="mt-2 text-lg font-semibold text-white">
                     {loading ? "..." : analytics.totalSessions}
                   </p>
                 </div>
@@ -1434,104 +1526,92 @@ export default function PerformancePage() {
           </section>
 
           <section className="grid gap-6 xl:grid-cols-2">
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8">
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl md:p-6">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-2xl font-semibold">Task Activity</h2>
+                  <h2 className="text-2xl font-semibold text-white">Task Activity</h2>
                   <p className="mt-2 text-sm text-slate-400">{getFilterTitle()}</p>
                 </div>
-                <span className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
                   {loading ? "..." : analytics.filteredTasks.length} shown
                 </span>
               </div>
 
               <div className="mt-6 space-y-4">
                 {loading ? (
-                  <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
+                  <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5 text-slate-400">
                     Loading tasks...
                   </div>
                 ) : analytics.filteredTasks.length === 0 ? (
-                  <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
+                  <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5 text-slate-400">
                     No matching tasks for this filter.
                   </div>
                 ) : (
-                  analytics.filteredTasks.map((task) => {
-                    const days = getDaysUntil(task.dueDate);
-
-                    return (
-                      <div
-                        key={task.id}
-                        className="rounded-2xl border border-slate-800 bg-slate-950 p-4"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <p
-                              className={`font-medium ${
-                                task.completed ? "text-slate-500 line-through" : "text-white"
-                              }`}
-                            >
-                              {task.title}
-                            </p>
-                            <p className="mt-1 text-sm text-slate-400">
-                              {task.module} • Due {task.dueDate}
-                            </p>
-                            {!task.completed && (
-                              <p className="mt-2 text-xs text-slate-500">
-                                {days < 0
-                                  ? `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`
-                                  : days === 0
-                                  ? "Due today"
-                                  : days === 1
-                                  ? "Due tomorrow"
-                                  : `Due in ${days} days`}
-                              </p>
-                            )}
-                          </div>
-
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-medium ${getPriorityClass(
-                              task.priority
-                            )}`}
+                  analytics.filteredTasks.map((task) => (
+                    <div
+                      key={task.id}
+                      className="rounded-2xl border border-white/10 bg-slate-950/70 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p
+                            className={`font-medium ${
+                              task.completed ? "text-slate-500 line-through" : "text-white"
+                            }`}
                           >
-                            {task.priority}
-                          </span>
+                            {task.title}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-400">
+                            {task.module}
+                          </p>
+                          <p className="mt-2 text-xs text-slate-500">
+                            {formatDueLabel(task.dueDate)}
+                          </p>
                         </div>
+
+                        <span
+                          className={`rounded-full border px-3 py-1 text-xs font-medium ${getPriorityClass(
+                            task.priority
+                          )}`}
+                        >
+                          {task.priority}
+                        </span>
                       </div>
-                    );
-                  })
+                    </div>
+                  ))
                 )}
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8">
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl md:p-6">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-2xl font-semibold">Planner Activity</h2>
+                  <h2 className="text-2xl font-semibold text-white">Planner Activity</h2>
                   <p className="mt-2 text-sm text-slate-400">
                     {activeFilter === "all"
                       ? "Recent planner activity"
                       : "Planner items connected to the current focus filter"}
                   </p>
                 </div>
-                <span className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
                   {loading ? "..." : analytics.filteredSessions.length} shown
                 </span>
               </div>
 
               <div className="mt-6 space-y-4">
                 {loading ? (
-                  <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
+                  <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5 text-slate-400">
                     Loading planner activity...
                   </div>
                 ) : analytics.filteredSessions.length === 0 ? (
-                  <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
+                  <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5 text-slate-400">
                     No matching planner activity for this filter.
                   </div>
                 ) : (
                   analytics.filteredSessions.map((session) => (
                     <div
                       key={session.id}
-                      className="rounded-2xl border border-slate-800 bg-slate-950 p-4"
+                      className="rounded-2xl border border-white/10 bg-slate-950/70 p-4"
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div>
@@ -1543,10 +1623,10 @@ export default function PerformancePage() {
                         </div>
 
                         <span
-                          className={`rounded-full px-3 py-1 text-xs font-medium ${
+                          className={`rounded-full border px-3 py-1 text-xs font-medium ${
                             session.completed
-                              ? "bg-emerald-500/15 text-emerald-300"
-                              : "bg-blue-500/15 text-blue-300"
+                              ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                              : "border-blue-500/20 bg-blue-500/10 text-blue-300"
                           }`}
                         >
                           {session.completed ? "Done" : "Planned"}
@@ -1560,9 +1640,9 @@ export default function PerformancePage() {
           </section>
 
           <section className="grid gap-6 xl:grid-cols-2">
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8">
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl md:p-6">
               <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-semibold">Module Breakdown</h2>
+                <h2 className="text-2xl font-semibold text-white">Module Breakdown</h2>
                 <span className="text-sm text-slate-400">
                   {loading ? "..." : analytics.moduleStats.length} module
                   {!loading && analytics.moduleStats.length === 1 ? "" : "s"}
@@ -1571,34 +1651,33 @@ export default function PerformancePage() {
 
               <div className="mt-6 space-y-4">
                 {loading ? (
-                  <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
+                  <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5 text-slate-400">
                     Loading module data...
                   </div>
                 ) : analytics.moduleStats.length === 0 ? (
-                  <div className="rounded-2xl bg-slate-950 p-5 text-slate-400">
+                  <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5 text-slate-400">
                     No task or planner data yet.
                   </div>
                 ) : (
                   analytics.moduleStats.map((module) => (
                     <div
                       key={module.module}
-                      className="rounded-2xl border border-slate-800 bg-slate-950 p-5"
+                      className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5"
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div>
-                          <p className="text-lg font-semibold">{module.module}</p>
+                          <p className="text-lg font-semibold text-white">{module.module}</p>
                           <p className="mt-2 text-sm text-slate-400">
                             {module.completedTasks} completed • {module.pendingTasks} pending
                           </p>
                           <p className="mt-1 text-sm text-slate-500">
-                            {module.sessions} study block
-                            {module.sessions === 1 ? "" : "s"} • {module.plannedHours}h
-                            planned
+                            {module.sessions} study block{module.sessions === 1 ? "" : "s"} •{" "}
+                            {module.plannedHours}h planned
                           </p>
                         </div>
 
                         <div className="text-right">
-                          <p className="text-lg font-semibold">
+                          <p className="text-lg font-semibold text-white">
                             {module.taskCompletionRate}%
                           </p>
                           <p className="text-xs text-slate-500">task completion</p>
@@ -1617,39 +1696,54 @@ export default function PerformancePage() {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8">
-              <h2 className="text-2xl font-semibold">Planner Signals</h2>
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl md:p-6">
+              <h2 className="text-2xl font-semibold text-white">Planner Signals</h2>
 
               <div className="mt-6 space-y-4">
-                <div className="rounded-2xl bg-slate-950 p-5">
+                <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5">
                   <p className="text-sm text-slate-400">Sessions Completed</p>
-                  <p className="mt-2 text-lg font-semibold">
+                  <p className="mt-2 text-lg font-semibold text-white">
                     {loading ? "..." : analytics.completedSessions}
                   </p>
                 </div>
 
-                <div className="rounded-2xl bg-slate-950 p-5">
+                <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5">
                   <p className="text-sm text-slate-400">Open Study Blocks</p>
-                  <p className="mt-2 text-lg font-semibold">
+                  <p className="mt-2 text-lg font-semibold text-white">
                     {loading ? "..." : analytics.openSessions}
                   </p>
                 </div>
 
-                <div className="rounded-2xl bg-slate-950 p-5">
+                <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5">
                   <p className="text-sm text-slate-400">Open Workload</p>
-                  <p className="mt-2 text-lg font-semibold">
+                  <p className="mt-2 text-lg font-semibold text-white">
                     {loading ? "..." : analytics.pendingTasks} active task
                     {!loading && analytics.pendingTasks === 1 ? "" : "s"}
                   </p>
                 </div>
 
-                <div className="rounded-2xl bg-slate-950 p-5">
+                <div className="rounded-2xl border border-white/5 bg-slate-950/70 p-5">
                   <p className="text-sm text-slate-400">Due Today / Tomorrow</p>
-                  <p className="mt-2 text-lg font-semibold">
+                  <p className="mt-2 text-lg font-semibold text-white">
                     {loading ? "..." : analytics.dueTodayOrTomorrow}
                   </p>
                 </div>
               </div>
+            </div>
+          </section>
+
+          <section className="rounded-[28px] border border-white/10 bg-gradient-to-br from-blue-500/10 via-purple-500/10 to-slate-900 p-5 backdrop-blur-xl md:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-slate-300">Quick read</p>
+                <p className="mt-2 text-lg font-semibold text-white">
+                  Strong performance usually comes from reducing pressure, not adding more planning.
+                </p>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                  Clear overdue work, protect your next study session, and use the recovery moves above to make the biggest score gains first.
+                </p>
+              </div>
+              <ArrowUpRight className="mt-1 h-5 w-5 text-slate-500" />
             </div>
           </section>
         </div>
