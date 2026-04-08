@@ -1093,14 +1093,15 @@ export default function HomePage() {
   const isLoadingPage = loading || leaderboardLoading;
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#020817] text-white">
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.16),transparent_28%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.10),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(244,63,94,0.08),transparent_24%)]" />
+    <main className="min-h-screen overflow-x-hidden bg-[#030712] text-white">
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.18),transparent_28%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.12),transparent_24%),radial-gradient(circle_at_bottom_right,rgba(244,63,94,0.08),transparent_26%)]" />
+      <div className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,transparent_18%,transparent_82%,rgba(255,255,255,0.02)_100%)]" />
 
       <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
-        <div className="space-y-6 sm:space-y-8">
-          <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,#08122b_0%,#061021_100%)] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:p-8 md:p-10">
-            <div className="grid gap-8 xl:grid-cols-[1.08fr_0.92fr] xl:items-center">
-              <div className="max-w-3xl">
+        <div className="space-y-6">
+          <section className="overflow-hidden rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,#07111f_0%,#081325_100%)] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:p-8">
+            <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+              <div className="min-w-0">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="inline-flex w-fit items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-300 sm:text-sm">
                     <Sparkles className="h-4 w-4 text-blue-300" />
@@ -1140,10 +1141,10 @@ export default function HomePage() {
                   pressure in one place so you always know what matters next.
                 </p>
 
-                <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <div className="rounded-2xl border border-orange-400/20 bg-orange-500/10 px-4 py-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-orange-200/70">
-                      Daily Streak
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-orange-200/70">
+                      Streak
                     </p>
                     <div className="mt-2 flex items-center gap-2">
                       <Flame className="h-5 w-5 text-orange-300" />
@@ -1152,12 +1153,12 @@ export default function HomePage() {
                       </p>
                     </div>
                     <p className="mt-2 text-xs text-orange-200/70">
-                      Best: {profile ? profile.best_streak : 0} days
+                      Best: {profile ? profile.best_streak : 0}
                     </p>
                   </div>
 
                   <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/70">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-cyan-200/70">
                       Level
                     </p>
                     <div className="mt-2 flex items-center gap-2">
@@ -1167,12 +1168,24 @@ export default function HomePage() {
                       </p>
                     </div>
                     <p className="mt-2 text-xs text-cyan-200/70">
-                      {profile?.xp ?? 0} total XP
+                      {profile?.xp ?? 0} XP
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-4">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-200/70">
+                      Completion
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-white">
+                      {loading ? "..." : `${stats.completionRate}%`}
+                    </p>
+                    <p className="mt-2 text-xs text-emerald-200/70">
+                      {loading ? "..." : `${stats.completed} completed`}
                     </p>
                   </div>
 
                   <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
                       Due This Week
                     </p>
                     <p className="mt-2 text-2xl font-semibold text-white">
@@ -1223,11 +1236,11 @@ export default function HomePage() {
               </div>
 
               <div
-                className={`relative rounded-[32px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl sm:p-6 ${getCookedGlowClass(
+                className={`relative rounded-[28px] border border-white/10 bg-white/[0.045] p-5 backdrop-blur-xl sm:p-6 ${getCookedGlowClass(
                   cooked.score
                 )}`}
               >
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.14),transparent_45%)]" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.14),transparent_48%)]" />
                 <div className="relative">
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -1277,7 +1290,34 @@ export default function HomePage() {
                     {loading ? "Loading your dashboard..." : getHeroSubtitle(cooked.score)}
                   </p>
 
-                  <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="mt-5 grid grid-cols-3 gap-3">
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                        Active
+                      </p>
+                      <p className="mt-2 text-xl font-semibold text-white">
+                        {stats.pending}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                        Urgent
+                      </p>
+                      <p className="mt-2 text-xl font-semibold text-white">
+                        {stats.urgent}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                        Study Hrs
+                      </p>
+                      <p className="mt-2 text-xl font-semibold text-white">
+                        {loading ? "..." : stats.studyHours}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4">
                     <div className="flex items-center justify-between gap-4">
                       <div>
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
@@ -1300,7 +1340,7 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
                     <button
                       type="button"
                       onClick={() => handleShareScore(cooked.score)}
@@ -1317,13 +1357,13 @@ export default function HomePage() {
                     </button>
                   </div>
 
-                  <div className="mt-6 rounded-[22px] border border-white/10 bg-white p-4">
+                  <div className="mt-5 rounded-[22px] border border-white/10 bg-white p-4">
                     <Image
                       src="/logo.png"
                       alt="LockdIn logo"
                       width={260}
                       height={260}
-                      className="mx-auto h-auto w-[150px] object-contain sm:w-[185px]"
+                      className="mx-auto h-auto w-[130px] object-contain sm:w-[155px]"
                       priority
                     />
                   </div>
@@ -1332,58 +1372,8 @@ export default function HomePage() {
             </div>
           </section>
 
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-[24px] border border-orange-400/20 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
-              <div className="flex items-center gap-2 text-sm text-orange-300">
-                <Flame className="h-4 w-4" />
-                Streak
-              </div>
-              <p className="mt-4 text-4xl font-semibold text-white">
-                {profile ? profile.streak : 0}
-              </p>
-              <p className="mt-2 text-sm text-slate-400">
-                Best streak: {profile ? profile.best_streak : 0} days
-              </p>
-            </div>
-
-            <div className="rounded-[24px] border border-cyan-400/20 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
-              <div className="flex items-center gap-2 text-sm text-cyan-300">
-                <Trophy className="h-4 w-4" />
-                XP & Level
-              </div>
-              <p className="mt-4 text-4xl font-semibold text-white">{profileLevel}</p>
-              <p className="mt-2 text-sm text-slate-400">{profile?.xp ?? 0} XP total</p>
-            </div>
-
-            <div className="rounded-[24px] border border-emerald-400/20 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
-              <div className="flex items-center gap-2 text-sm text-emerald-300">
-                <Shield className="h-4 w-4" />
-                Completion
-              </div>
-              <p className="mt-4 text-4xl font-semibold text-white">
-                {loading ? "..." : `${stats.completionRate}%`}
-              </p>
-              <p className="mt-2 text-sm text-slate-400">
-                {loading ? "..." : `${stats.completed} completed tasks`}
-              </p>
-            </div>
-
-            <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
-              <div className="flex items-center gap-2 text-sm text-slate-300">
-                <CalendarDays className="h-4 w-4" />
-                Study Plan
-              </div>
-              <p className="mt-4 text-4xl font-semibold text-white">
-                {loading ? "..." : stats.studyHours}
-              </p>
-              <p className="mt-2 text-sm text-slate-400">
-                {loading ? "..." : `${stats.completedStudyBlocks} blocks done`}
-              </p>
-            </div>
-          </section>
-
-          <section className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
-            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+          <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-7">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="inline-flex items-center gap-2 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-400/20">
@@ -1438,7 +1428,7 @@ export default function HomePage() {
                   </form>
 
                   <p className="mt-3 text-xs text-slate-500">
-                    Add friends by their LockdIn username. You only need to add them once.
+                    Add friends by their LockdIn username.
                   </p>
 
                   {friendError ? (
@@ -1449,7 +1439,7 @@ export default function HomePage() {
                     <p className="mt-3 text-sm text-emerald-300">{friendSuccess}</p>
                   ) : null}
 
-                  <div className="mt-6 flex flex-wrap gap-2">
+                  <div className="mt-5 flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={() => setLeaderboardMode("mostCooked")}
@@ -1496,7 +1486,7 @@ export default function HomePage() {
                     </button>
                   </div>
 
-                  <div className="mt-6 space-y-4">
+                  <div className="mt-5 space-y-3">
                     {leaderboardLoading ? (
                       <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
                         Loading leaderboard...
@@ -1510,7 +1500,7 @@ export default function HomePage() {
                       sortedLeaderboard.slice(0, 5).map((entry, index) => (
                         <div
                           key={entry.id}
-                          className={`rounded-2xl border p-4 sm:p-5 ${getLeaderboardAccent(
+                          className={`rounded-2xl border p-4 ${getLeaderboardAccent(
                             entry.cookedScore
                           )} ${entry.isYou ? "ring-1 ring-blue-400/30" : ""}`}
                         >
@@ -1586,7 +1576,7 @@ export default function HomePage() {
                               >
                                 {entry.cookedScore}
                               </p>
-                              <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
+                              <p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-slate-400">
                                 cooked score
                               </p>
                               <p className="mt-2 text-sm text-slate-300">
@@ -1661,8 +1651,9 @@ export default function HomePage() {
                 </div>
 
                 <ul className="mt-5 space-y-3">
-                  {(loading ? ["Loading your risk factors..."] : cooked.reasons).map(
-                    (reason) => (
+                  {(loading ? ["Loading your risk factors..."] : cooked.reasons)
+                    .slice(0, 4)
+                    .map((reason) => (
                       <li
                         key={reason}
                         className="flex items-start gap-3 text-sm text-slate-200"
@@ -1670,8 +1661,7 @@ export default function HomePage() {
                         <span className="mt-2 h-2 w-2 rounded-full bg-blue-400" />
                         <span>{reason}</span>
                       </li>
-                    )
-                  )}
+                    ))}
                 </ul>
 
                 <div className="mt-6">
@@ -1740,71 +1730,13 @@ export default function HomePage() {
                   </Link>
                 </div>
               </div>
-
-              <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#0f172a_0%,#111827_55%,#1f2937_100%)] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10">
-                      <Share2 className="h-3.5 w-3.5" />
-                      Shareable Moment
-                    </div>
-                    <h3 className="mt-4 text-2xl font-semibold text-white">
-                      Your latest flex
-                    </h3>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white">
-                    <Trophy className="h-5 w-5" />
-                  </div>
-                </div>
-
-                <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-5">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                    Current snapshot
-                  </p>
-                  <h4 className="mt-2 text-2xl font-semibold text-white">
-                    {getRoastLabel(cooked.score)}
-                  </h4>
-                  <p className="mt-2 text-sm text-slate-300">
-                    You’re on {cooked.score}/100 with {stats.pending} active tasks and a{" "}
-                    {profile ? profile.streak : 0}-day streak.
-                  </p>
-
-                  <div className="mt-5 grid grid-cols-3 gap-3">
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                        Score
-                      </p>
-                      <p className="mt-2 text-xl font-semibold text-white">
-                        {cooked.score}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                        XP
-                      </p>
-                      <p className="mt-2 text-xl font-semibold text-white">
-                        {profile?.xp ?? 0}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                        Streak
-                      </p>
-                      <p className="mt-2 text-xl font-semibold text-white">
-                        {profile ? profile.streak : 0}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+          <section className="grid gap-6 lg:grid-cols-3">
+            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
               <div className="flex items-center justify-between gap-4">
-                <h3 className="text-xl font-semibold sm:text-2xl">Biggest Threat</h3>
+                <h3 className="text-xl font-semibold">Biggest Threat</h3>
                 <Link
                   href="/performance"
                   className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
@@ -1814,55 +1746,58 @@ export default function HomePage() {
               </div>
 
               {loading ? (
-                <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 text-slate-300 sm:p-6">
+                <div className="mt-5 rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
                   Loading your biggest threat...
                 </div>
               ) : biggestThreat ? (
-                <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 sm:p-6">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="break-words text-lg font-semibold">
-                        {biggestThreat.title}
+                <div className="mt-5 rounded-2xl border border-white/10 bg-[#101b38] p-5">
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="break-words text-lg font-semibold text-white">
+                          {biggestThreat.title}
+                        </p>
+                        <p className="mt-2 text-sm text-slate-400">
+                          {biggestThreat.module}
+                        </p>
+                      </div>
+                      <span
+                        className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
+                          biggestThreat.priority
+                        )}`}
+                      >
+                        {biggestThreat.priority}
+                      </span>
+                    </div>
+
+                    <div>
+                      <p className="text-sm text-slate-300">
+                        Due {biggestThreat.dueDate}
                       </p>
-                      <p className="mt-2 text-sm text-slate-400">
-                        {biggestThreat.module}
+                      <p className="mt-2 text-sm text-slate-500">
+                        {getUpcomingLabel(getDaysUntil(biggestThreat.dueDate))}
                       </p>
                     </div>
-                    <span
-                      className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
-                        biggestThreat.priority
-                      )}`}
+
+                    <Link
+                      href="/tasks"
+                      className="inline-flex items-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
                     >
-                      {biggestThreat.priority}
-                    </span>
+                      Go to tasks
+                      <ChevronRight className="h-4 w-4" />
+                    </Link>
                   </div>
-
-                  <p className="mt-5 text-sm text-slate-300">
-                    Due {biggestThreat.dueDate}
-                  </p>
-
-                  <p className="mt-2 text-sm text-slate-400">
-                    {getUpcomingLabel(getDaysUntil(biggestThreat.dueDate))}
-                  </p>
-
-                  <Link
-                    href="/tasks"
-                    className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
-                  >
-                    Go to tasks
-                    <ChevronRight className="h-4 w-4" />
-                  </Link>
                 </div>
               ) : (
-                <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 text-slate-300 sm:p-6">
-                  No immediate threats right now. That is a very nice position to be in.
+                <div className="mt-5 rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                  No immediate threats right now.
                 </div>
               )}
             </div>
 
-            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
               <div className="flex items-center justify-between gap-4">
-                <h3 className="text-xl font-semibold sm:text-2xl">Today’s Focus</h3>
+                <h3 className="text-xl font-semibold">Today’s Focus</h3>
                 <Link
                   href="/tasks"
                   className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
@@ -1871,46 +1806,109 @@ export default function HomePage() {
                 </Link>
               </div>
 
-              <div className="mt-6 space-y-4">
+              <div className="mt-5 space-y-3">
                 {loading ? (
                   <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
                     Loading focus tasks...
                   </div>
                 ) : todayFocus.length === 0 ? (
                   <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                    No active tasks right now. That board is looking clean.
+                    No active tasks right now.
                   </div>
                 ) : (
                   todayFocus.map((task, index) => (
                     <div
                       key={task.id}
-                      className="rounded-2xl border border-white/10 bg-[#101b38] p-4 sm:p-5"
+                      className="rounded-2xl border border-white/10 bg-[#101b38] p-4"
                     >
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0">
-                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                            Focus {index + 1}
-                          </p>
-                          <p className="mt-2 break-words text-base font-medium text-white">
-                            {task.title}
-                          </p>
-                          <p className="mt-2 text-sm text-slate-400">{task.module}</p>
-                          <p className="mt-2 text-sm text-slate-500">
-                            {getUpcomingLabel(getDaysUntil(task.dueDate))}
-                          </p>
+                      <div className="flex flex-col gap-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                              Focus {index + 1}
+                            </p>
+                            <p className="mt-2 break-words text-base font-medium text-white">
+                              {task.title}
+                            </p>
+                            <p className="mt-2 text-sm text-slate-400">{task.module}</p>
+                          </div>
+
+                          <span
+                            className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
+                              task.priority
+                            )}`}
+                          >
+                            {task.priority}
+                          </span>
                         </div>
 
-                        <span
-                          className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
-                            task.priority
-                          )}`}
-                        >
-                          {task.priority}
-                        </span>
+                        <p className="text-sm text-slate-500">
+                          {getUpcomingLabel(getDaysUntil(task.dueDate))}
+                        </p>
                       </div>
                     </div>
                   ))
                 )}
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#111827_0%,#0f172a_100%)] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10">
+                <Share2 className="h-3.5 w-3.5" />
+                Shareable Moment
+              </div>
+
+              <h3 className="mt-4 text-2xl font-semibold text-white">
+                Your latest flex
+              </h3>
+
+              <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                  Current snapshot
+                </p>
+                <h4 className="mt-2 text-2xl font-semibold text-white">
+                  {getRoastLabel(cooked.score)}
+                </h4>
+                <p className="mt-2 text-sm text-slate-300">
+                  You’re on {cooked.score}/100 with {stats.pending} active tasks and a{" "}
+                  {profile ? profile.streak : 0}-day streak.
+                </p>
+
+                <div className="mt-5 grid grid-cols-3 gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                      Score
+                    </p>
+                    <p className="mt-2 text-xl font-semibold text-white">
+                      {cooked.score}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                      XP
+                    </p>
+                    <p className="mt-2 text-xl font-semibold text-white">
+                      {profile?.xp ?? 0}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                      Streak
+                    </p>
+                    <p className="mt-2 text-xl font-semibold text-white">
+                      {profile ? profile.streak : 0}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleShareScore(cooked.score)}
+                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                >
+                  <Share2 className="h-4 w-4" />
+                  Share this
+                </button>
               </div>
             </div>
           </section>
@@ -1927,7 +1925,7 @@ export default function HomePage() {
                 </Link>
               </div>
 
-              <div className="mt-6 space-y-4">
+              <div className="mt-6 space-y-3">
                 {loading ? (
                   <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
                     Loading recent tasks...
@@ -1940,9 +1938,9 @@ export default function HomePage() {
                   stats.recent.map((task) => (
                     <div
                       key={task.id}
-                      className="rounded-2xl border border-white/10 bg-[#101b38] p-4 sm:p-5"
+                      className="rounded-2xl border border-white/10 bg-[#101b38] p-4"
                     >
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                           <p
                             className={`break-words text-base font-medium ${
@@ -1971,178 +1969,123 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
-              <div className="flex items-center justify-between gap-4">
-                <h3 className="text-xl font-semibold sm:text-2xl">Quick Access</h3>
-                <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
-                  Move faster
+            <div className="space-y-6">
+              <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+                <div className="flex items-center justify-between gap-4">
+                  <h3 className="text-xl font-semibold sm:text-2xl">
+                    Today’s Study Plan
+                  </h3>
+                  <Link
+                    href="/planner"
+                    className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
+                  >
+                    Open planner
+                  </Link>
                 </div>
-              </div>
 
-              <div className="mt-6 grid gap-4 md:grid-cols-2">
-                <Link
-                  href="/tasks"
-                  className="rounded-2xl border border-white/10 bg-[#101b38] p-5 transition hover:border-blue-400 hover:bg-[#122145]"
-                >
-                  <p className="text-lg font-medium">Tasks</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    Add work, manage deadlines, and update progress.
-                  </p>
-                </Link>
-
-                <Link
-                  href="/planner"
-                  className="rounded-2xl border border-white/10 bg-[#101b38] p-5 transition hover:border-blue-400 hover:bg-[#122145]"
-                >
-                  <p className="text-lg font-medium">Planner</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    Turn your workload into realistic study blocks.
-                  </p>
-                </Link>
-
-                <Link
-                  href="/performance"
-                  className="rounded-2xl border border-white/10 bg-[#101b38] p-5 transition hover:border-blue-400 hover:bg-[#122145]"
-                >
-                  <p className="text-lg font-medium">Performance</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    Track pressure, momentum, and what to fix next.
-                  </p>
-                </Link>
-
-                <Link
-                  href="/badges"
-                  className="rounded-2xl border border-amber-400/20 bg-[linear-gradient(135deg,rgba(251,191,36,0.18),rgba(15,23,42,0.95))] p-5 transition hover:border-amber-400 hover:bg-[linear-gradient(135deg,rgba(251,191,36,0.24),rgba(15,23,42,1))]"
-                >
-                  <p className="text-lg font-medium text-white">Badges</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-300">
-                    Track your milestones, streaks, and progress achievements.
-                  </p>
-                </Link>
-
-                <Link
-                  href="/degree-tracker"
-                  className="group relative overflow-hidden rounded-2xl border border-blue-400/20 bg-[linear-gradient(135deg,rgba(59,130,246,0.18),rgba(15,23,42,0.95))] p-5 transition hover:border-blue-400 hover:bg-[linear-gradient(135deg,rgba(59,130,246,0.24),rgba(15,23,42,1))] md:col-span-2"
-                >
-                  <div className="absolute right-0 top-0 h-24 w-24 rounded-full bg-blue-400/10 blur-2xl transition group-hover:bg-blue-400/20" />
-                  <div className="relative">
-                    <div className="inline-flex rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
-                      New
+                <div className="mt-6 space-y-3">
+                  {todaysStudyBlocks.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                      No study blocks for today yet. Add one before you drift.
                     </div>
-                    <p className="mt-3 text-lg font-medium text-white">
-                      Degree Tracker
-                    </p>
-                    <p className="mt-2 text-sm leading-6 text-slate-300">
-                      Track overall progress, see how far through your degree you
-                      are, and stay motivated with the bigger picture.
-                    </p>
-                    <p className="mt-4 text-sm font-medium text-blue-300 transition group-hover:text-blue-200">
-                      Open degree tracker →
-                    </p>
-                  </div>
-                </Link>
-              </div>
-            </div>
-          </section>
-
-          <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
-              <div className="flex items-center justify-between gap-4">
-                <h3 className="text-xl font-semibold sm:text-2xl">
-                  Today’s Study Plan
-                </h3>
-                <Link
-                  href="/planner"
-                  className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
-                >
-                  Open planner
-                </Link>
-              </div>
-
-              <div className="mt-6 space-y-4">
-                {todaysStudyBlocks.length === 0 ? (
-                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                    No study blocks for today yet. Add one before you drift.
-                  </div>
-                ) : (
-                  todaysStudyBlocks.slice(0, 4).map((block, index) => (
-                    <div
-                      key={`${block.day}-${block.time}-${index}`}
-                      className="rounded-2xl border border-white/10 bg-[#101b38] p-4 sm:p-5"
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="min-w-0">
-                          <p className="text-base font-medium text-white">
-                            {block.subject}
-                          </p>
-                          <p className="mt-2 text-sm text-slate-400">
-                            {block.focus}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium text-white">{block.time}</p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {block.durationMinutes} mins
-                          </p>
+                  ) : (
+                    todaysStudyBlocks.slice(0, 4).map((block, index) => (
+                      <div
+                        key={`${block.day}-${block.time}-${index}`}
+                        className="rounded-2xl border border-white/10 bg-[#101b38] p-4"
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="min-w-0">
+                            <p className="text-base font-medium text-white">
+                              {block.subject}
+                            </p>
+                            <p className="mt-2 text-sm text-slate-400">
+                              {block.focus}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-medium text-white">{block.time}</p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {block.durationMinutes} mins
+                            </p>
+                          </div>
                         </div>
                       </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+                <div className="flex items-center justify-between gap-4">
+                  <h3 className="text-xl font-semibold sm:text-2xl">Quick Access</h3>
+                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
+                    Move faster
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                  <Link
+                    href="/tasks"
+                    className="rounded-2xl border border-white/10 bg-[#101b38] p-5 transition hover:border-blue-400 hover:bg-[#122145]"
+                  >
+                    <p className="text-lg font-medium">Tasks</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-400">
+                      Add work, manage deadlines, and update progress.
+                    </p>
+                  </Link>
+
+                  <Link
+                    href="/planner"
+                    className="rounded-2xl border border-white/10 bg-[#101b38] p-5 transition hover:border-blue-400 hover:bg-[#122145]"
+                  >
+                    <p className="text-lg font-medium">Planner</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-400">
+                      Turn your workload into realistic study blocks.
+                    </p>
+                  </Link>
+
+                  <Link
+                    href="/performance"
+                    className="rounded-2xl border border-white/10 bg-[#101b38] p-5 transition hover:border-blue-400 hover:bg-[#122145]"
+                  >
+                    <p className="text-lg font-medium">Performance</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-400">
+                      Track pressure, momentum, and what to fix next.
+                    </p>
+                  </Link>
+
+                  <Link
+                    href="/badges"
+                    className="rounded-2xl border border-amber-400/20 bg-[linear-gradient(135deg,rgba(251,191,36,0.18),rgba(15,23,42,0.95))] p-5 transition hover:border-amber-400 hover:bg-[linear-gradient(135deg,rgba(251,191,36,0.24),rgba(15,23,42,1))]"
+                  >
+                    <p className="text-lg font-medium text-white">Badges</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">
+                      Track your milestones, streaks, and progress achievements.
+                    </p>
+                  </Link>
+
+                  <Link
+                    href="/degree-tracker"
+                    className="group relative overflow-hidden rounded-2xl border border-blue-400/20 bg-[linear-gradient(135deg,rgba(59,130,246,0.18),rgba(15,23,42,0.95))] p-5 transition hover:border-blue-400 hover:bg-[linear-gradient(135deg,rgba(59,130,246,0.24),rgba(15,23,42,1))] md:col-span-2"
+                  >
+                    <div className="absolute right-0 top-0 h-24 w-24 rounded-full bg-blue-400/10 blur-2xl transition group-hover:bg-blue-400/20" />
+                    <div className="relative">
+                      <div className="inline-flex rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
+                        New
+                      </div>
+                      <p className="mt-3 text-lg font-medium text-white">
+                        Degree Tracker
+                      </p>
+                      <p className="mt-2 text-sm leading-6 text-slate-300">
+                        Track overall progress, see how far through your degree you
+                        are, and stay motivated with the bigger picture.
+                      </p>
+                      <p className="mt-4 text-sm font-medium text-blue-300 transition group-hover:text-blue-200">
+                        Open degree tracker →
+                      </p>
                     </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#111827_0%,#0f172a_100%)] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10">
-                <Zap className="h-3.5 w-3.5" />
-                LockdIn Hook
-              </div>
-
-              <h3 className="mt-4 text-2xl font-semibold text-white">
-                Student survival, but actually clean.
-              </h3>
-
-              <p className="mt-4 text-sm leading-7 text-slate-300">
-                Your cooked score, streak, deadlines, planner, and leaderboard now
-                all point toward one thing: helping you stay ahead instead of
-                reacting too late.
-              </p>
-
-              <div className="mt-6 grid grid-cols-2 gap-4">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                    Active tasks
-                  </p>
-                  <p className="mt-2 text-3xl font-semibold text-white">
-                    {stats.pending}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                    Urgent
-                  </p>
-                  <p className="mt-2 text-3xl font-semibold text-white">
-                    {stats.urgent}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                    Open study blocks
-                  </p>
-                  <p className="mt-2 text-3xl font-semibold text-white">
-                    {stats.openStudyBlocks}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                    Planner completion
-                  </p>
-                  <p className="mt-2 text-3xl font-semibold text-white">
-                    {stats.plannerCompletionRate}%
-                  </p>
+                  </Link>
                 </div>
               </div>
             </div>
