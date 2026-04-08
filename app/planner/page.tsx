@@ -211,57 +211,52 @@ function generatePlanFromTasks(
 ): Omit<StudyBlock, "id">[] {
   const activeTasks = tasks.filter((task) => !task.completed);
 
-  if (
-    activeTasks.length === 0 ||
-    preferences.availableDays.length === 0 ||
-    preferences.availableTimeSlots.length === 0 ||
-    preferences.dailySessionLimit <= 0
-  ) {
-    return [];
-  }
+  if (activeTasks.length === 0) return [];
+  if (preferences.availableDays.length === 0) return [];
+  if (preferences.availableTimeSlots.length === 0) return [];
+  if (preferences.dailySessionLimit <= 0) return [];
 
   const orderedDays = sortDays(preferences.availableDays);
-  const orderedTimes = sortTimes(preferences.availableTimeSlots).slice(
+  const orderedTimes = sortTimes(preferences.availableTimeSlots);
+
+  const limitedTimes = orderedTimes.slice(
     0,
-    Math.max(preferences.dailySessionLimit, 1)
+    Math.min(preferences.dailySessionLimit, orderedTimes.length)
   );
 
   const availableSlots = orderedDays.flatMap((day) =>
-    orderedTimes.map((time) => ({ day, time }))
+    limitedTimes.map((time) => ({ day, time }))
   );
 
   if (availableSlots.length === 0) return [];
 
   const rankedTasks = [...activeTasks].sort((a, b) => {
-    const scoreA = buildTaskWeight(a);
-    const scoreB = buildTaskWeight(b);
-    return scoreB - scoreA;
+    return buildTaskWeight(b) - buildTaskWeight(a);
   });
 
-  const taskCopies: Task[] = [];
-  rankedTasks.forEach((task) => {
-    const copies = getRecommendedBlockCount(task);
-    for (let i = 0; i < copies; i++) {
-      taskCopies.push(task);
-    }
-  });
+  const expandedTasks: Task[] = [];
 
-  const finalAssignments = taskCopies.slice(0, availableSlots.length);
-
-  while (
-    finalAssignments.length < availableSlots.length &&
-    rankedTasks.length > 0 &&
-    finalAssignments.length < rankedTasks.length * 3
-  ) {
-    for (const task of rankedTasks) {
-      if (finalAssignments.length >= availableSlots.length) break;
-      finalAssignments.push(task);
+  for (const task of rankedTasks) {
+    const repeats = getRecommendedBlockCount(task);
+    for (let i = 0; i < repeats; i++) {
+      expandedTasks.push(task);
     }
   }
 
-  return availableSlots.slice(0, finalAssignments.length).map((slot, index) => {
-    const task = finalAssignments[index];
+  if (expandedTasks.length === 0) return [];
 
+  const assignedTasks: Task[] = [];
+  let pointer = 0;
+
+  while (assignedTasks.length < availableSlots.length) {
+    assignedTasks.push(expandedTasks[pointer % expandedTasks.length]);
+    pointer += 1;
+
+    if (pointer > availableSlots.length * 3) break;
+  }
+
+  return availableSlots.map((slot, index) => {
+    const task = assignedTasks[index];
     return {
       day: slot.day,
       time: slot.time,
@@ -288,13 +283,13 @@ function groupBlocksByDay(blocks: StudyBlock[]) {
 
 export default function PlannerPage() {
   const [loading, setLoading] = useState(true);
-  const [savingPlan, setSavingPlan] = useState(false);
   const [generating, setGenerating] = useState(false);
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [plan, setPlan] = useState<StudyBlock[]>([]);
   const [preferences, setPreferences] =
     useState<PlannerPreferences>(DEFAULT_PREFERENCES);
+  const [plannerMessage, setPlannerMessage] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -313,64 +308,81 @@ export default function PlannerPage() {
           return;
         }
 
-        const [{ data: taskData, error: taskError }, { data: prefData }, { data: planData }] =
-          await Promise.all([
-            supabase
-              .from("tasks")
-              .select("*")
-              .eq("user_id", user.id)
-              .order("created_at", { ascending: false }),
-            supabase
-              .from("planner_preferences")
-              .select("*")
-              .eq("user_id", user.id)
-              .maybeSingle(),
-            supabase
-              .from("study_plan_blocks")
-              .select("*")
-              .eq("user_id", user.id)
-              .order("day", { ascending: true })
-              .order("time", { ascending: true }),
-          ]);
+        const [
+          { data: taskData, error: taskError },
+          { data: prefData, error: prefError },
+          { data: planData, error: planError },
+        ] = await Promise.all([
+          supabase
+            .from("tasks")
+            .select("*")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("planner_preferences")
+            .select("*")
+            .eq("user_id", user.id)
+            .maybeSingle(),
+          supabase
+            .from("study_plan_blocks")
+            .select("*")
+            .eq("user_id", user.id)
+            .order("day", { ascending: true })
+            .order("time", { ascending: true }),
+        ]);
 
         if (taskError) {
           console.error("Error loading tasks:", taskError.message);
         }
 
-        const mappedTasks: Task[] = ((taskData ?? []) as DatabaseTask[]).map((task) => ({
-          id: task.id,
-          title: task.title,
-          module: task.module,
-          dueDate: task.due_date,
-          priority: task.priority,
-          completed: task.completed,
-        }));
+        if (prefError) {
+          console.error("Error loading planner preferences:", prefError.message);
+        }
+
+        if (planError) {
+          console.error("Error loading study plan:", planError.message);
+        }
+
+        const mappedTasks: Task[] = ((taskData ?? []) as DatabaseTask[]).map(
+          (task) => ({
+            id: task.id,
+            title: task.title,
+            module: task.module,
+            dueDate: task.due_date,
+            priority: task.priority,
+            completed: task.completed,
+          })
+        );
 
         const mappedPrefs: PlannerPreferences = prefData
           ? {
-              availableDays: prefData.available_days ?? DEFAULT_PREFERENCES.availableDays,
+              availableDays:
+                prefData.available_days ?? DEFAULT_PREFERENCES.availableDays,
               availableTimeSlots:
-                prefData.available_time_slots ?? DEFAULT_PREFERENCES.availableTimeSlots,
-              sessionLength: prefData.session_length ?? DEFAULT_PREFERENCES.sessionLength,
+                prefData.available_time_slots ??
+                DEFAULT_PREFERENCES.availableTimeSlots,
+              sessionLength:
+                prefData.session_length ?? DEFAULT_PREFERENCES.sessionLength,
               dailySessionLimit:
-                prefData.daily_session_limit ?? DEFAULT_PREFERENCES.dailySessionLimit,
+                prefData.daily_session_limit ??
+                DEFAULT_PREFERENCES.dailySessionLimit,
               location: prefData.location ?? DEFAULT_PREFERENCES.location,
             }
           : DEFAULT_PREFERENCES;
 
-        const mappedPlan: StudyBlock[] = ((planData ?? []) as DatabaseStudyBlock[]).map(
-          (block) => ({
-            id: block.id,
-            day: block.day,
-            time: block.time,
-            subject: block.subject,
-            focus: block.focus,
-            taskId: block.task_id,
-            durationMinutes: block.duration_minutes,
-            completed: block.completed,
-            location: block.location,
-          })
-        );
+        const mappedPlan: StudyBlock[] = (
+          (planData ?? []) as DatabaseStudyBlock[]
+        ).map((block) => ({
+          id: block.id,
+          day: block.day,
+          time: block.time,
+          subject: block.subject,
+          focus: block.focus,
+          taskId: block.task_id,
+          durationMinutes: block.duration_minutes,
+          completed: block.completed,
+          location: block.location,
+        }));
 
         if (!mounted) return;
 
@@ -425,11 +437,17 @@ export default function PlannerPage() {
   }
 
   async function handleSavePreferences() {
-    await savePreferences(preferences);
+    const saved = await savePreferences(preferences);
+    setPlannerMessage(
+      saved
+        ? "Planner preferences saved."
+        : "Could not save planner preferences."
+    );
   }
 
   async function handleGeneratePlan() {
     setGenerating(true);
+    setPlannerMessage("");
 
     try {
       const {
@@ -443,9 +461,39 @@ export default function PlannerPage() {
       }
 
       const saved = await savePreferences(preferences);
-      if (!saved) return;
+      if (!saved) {
+        setPlannerMessage("Could not save planner preferences.");
+        return;
+      }
 
       const generated = generatePlanFromTasks(tasks, preferences);
+
+      if (generated.length === 0) {
+        setPlan([]);
+        setPlannerMessage(
+          "No plan could be generated. Make sure you have unfinished tasks and at least one study day and time selected."
+        );
+        return;
+      }
+
+      const localPlan: StudyBlock[] = generated.map((block, index) => ({
+        id: `temp-${index}-${block.day}-${block.time}`,
+        day: block.day,
+        time: block.time,
+        subject: block.subject,
+        focus: block.focus,
+        taskId: block.taskId,
+        durationMinutes: block.durationMinutes,
+        completed: false,
+        location: block.location,
+      }));
+
+      setPlan(localPlan);
+      setPlannerMessage(
+        `Generated ${localPlan.length} study block${
+          localPlan.length === 1 ? "" : "s"
+        }.`
+      );
 
       const { error: deleteError } = await supabase
         .from("study_plan_blocks")
@@ -454,11 +502,9 @@ export default function PlannerPage() {
 
       if (deleteError) {
         console.error("Error clearing old study plan:", deleteError.message);
-        return;
-      }
-
-      if (generated.length === 0) {
-        setPlan([]);
+        setPlannerMessage(
+          "Plan was generated, but old saved blocks could not be cleared."
+        );
         return;
       }
 
@@ -474,31 +520,56 @@ export default function PlannerPage() {
         location: block.location,
       }));
 
-      const { data, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .from("study_plan_blocks")
-        .insert(payload)
-        .select("*");
+        .insert(payload);
 
       if (insertError) {
         console.error("Error saving generated study plan:", insertError.message);
+        setPlannerMessage(
+          "Plan generated in the UI, but saving to your account failed. Check your table setup or RLS."
+        );
         return;
       }
 
-      const mappedPlan: StudyBlock[] = ((data ?? []) as DatabaseStudyBlock[]).map(
-        (block) => ({
-          id: block.id,
-          day: block.day,
-          time: block.time,
-          subject: block.subject,
-          focus: block.focus,
-          taskId: block.task_id,
-          durationMinutes: block.duration_minutes,
-          completed: block.completed,
-          location: block.location,
-        })
-      );
+      const { data: refreshedData, error: refreshError } = await supabase
+        .from("study_plan_blocks")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("day", { ascending: true })
+        .order("time", { ascending: true });
+
+      if (refreshError) {
+        console.error("Error reloading saved study plan:", refreshError.message);
+        setPlannerMessage(
+          "Plan generated and saved, but it could not be reloaded from the database."
+        );
+        return;
+      }
+
+      const mappedPlan: StudyBlock[] = (
+        (refreshedData ?? []) as DatabaseStudyBlock[]
+      ).map((block) => ({
+        id: block.id,
+        day: block.day,
+        time: block.time,
+        subject: block.subject,
+        focus: block.focus,
+        taskId: block.task_id,
+        durationMinutes: block.duration_minutes,
+        completed: block.completed,
+        location: block.location,
+      }));
 
       setPlan(mappedPlan);
+      setPlannerMessage(
+        `Plan generated and saved successfully with ${mappedPlan.length} block${
+          mappedPlan.length === 1 ? "" : "s"
+        }.`
+      );
+    } catch (error) {
+      console.error("Unexpected generate plan error:", error);
+      setPlannerMessage("Something went wrong while generating your plan.");
     } finally {
       setGenerating(false);
     }
@@ -697,14 +768,17 @@ export default function PlannerPage() {
                   <div>
                     <h2 className="text-2xl font-semibold">Planner Preferences</h2>
                     <p className="mt-2 text-sm text-slate-400">
-                      Choose when you can study, then generate a saved plan from your tasks.
+                      Choose when you can study, then generate a saved plan from
+                      your tasks.
                     </p>
                   </div>
                 </div>
 
                 <div className="mt-8 space-y-6">
                   <div>
-                    <label className="text-sm text-slate-400">Available Days</label>
+                    <label className="text-sm text-slate-400">
+                      Available Days
+                    </label>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {DAY_OPTIONS.map((day) => {
                         const active = preferences.availableDays.includes(day);
@@ -727,10 +801,14 @@ export default function PlannerPage() {
                   </div>
 
                   <div>
-                    <label className="text-sm text-slate-400">Available Time Slots</label>
+                    <label className="text-sm text-slate-400">
+                      Available Time Slots
+                    </label>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {TIME_SLOT_OPTIONS.map((time) => {
-                        const active = preferences.availableTimeSlots.includes(time);
+                        const active = preferences.availableTimeSlots.includes(
+                          time
+                        );
                         return (
                           <button
                             key={time}
@@ -751,7 +829,9 @@ export default function PlannerPage() {
 
                   <div className="grid gap-4 sm:grid-cols-3">
                     <div className="flex flex-col gap-2">
-                      <label className="text-sm text-slate-400">Session Length</label>
+                      <label className="text-sm text-slate-400">
+                        Session Length
+                      </label>
                       <select
                         value={preferences.sessionLength}
                         onChange={(e) =>
@@ -771,7 +851,9 @@ export default function PlannerPage() {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      <label className="text-sm text-slate-400">Daily Session Limit</label>
+                      <label className="text-sm text-slate-400">
+                        Daily Session Limit
+                      </label>
                       <select
                         value={preferences.dailySessionLimit}
                         onChange={(e) =>
@@ -790,7 +872,9 @@ export default function PlannerPage() {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      <label className="text-sm text-slate-400">Study Location</label>
+                      <label className="text-sm text-slate-400">
+                        Study Location
+                      </label>
                       <input
                         type="text"
                         value={preferences.location}
@@ -819,13 +903,19 @@ export default function PlannerPage() {
                     <button
                       type="button"
                       onClick={handleGeneratePlan}
-                      disabled={generating || savingPlan}
+                      disabled={generating}
                       className="inline-flex items-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 font-semibold text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <Wand2 className="h-4 w-4" />
                       {generating ? "Generating..." : "Generate Plan"}
                     </button>
                   </div>
+
+                  {plannerMessage ? (
+                    <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-200">
+                      {plannerMessage}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -843,7 +933,8 @@ export default function PlannerPage() {
                   <div className="mt-5 space-y-3">
                     {activeTasks.length === 0 ? (
                       <div className="rounded-2xl border border-white/10 bg-[#0b1324] p-5 text-slate-400">
-                        No active tasks found. Add tasks first, then generate a plan.
+                        No active tasks found. Add tasks first, then generate a
+                        plan.
                       </div>
                     ) : (
                       activeTasks
@@ -909,9 +1000,12 @@ export default function PlannerPage() {
             <section className="rounded-[28px] border border-white/10 bg-[#08101f] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.25)] sm:p-8">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <h2 className="text-3xl font-semibold text-white">Your Study Plan</h2>
+                  <h2 className="text-3xl font-semibold text-white">
+                    Your Study Plan
+                  </h2>
                   <p className="mt-2 text-sm text-slate-400">
-                    Generated blocks are saved to your account and stay after refresh.
+                    Generated blocks are saved to your account and stay after
+                    refresh.
                   </p>
                 </div>
 
@@ -939,9 +1033,12 @@ export default function PlannerPage() {
                     <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5">
                       <CalendarDays className="h-8 w-8 text-slate-400" />
                     </div>
-                    <h3 className="text-2xl font-semibold">No plan generated yet</h3>
+                    <h3 className="text-2xl font-semibold">
+                      No plan generated yet
+                    </h3>
                     <p className="mx-auto mt-3 max-w-md text-slate-400">
-                      Set your availability above and generate a plan from your unfinished tasks.
+                      Set your availability above and generate a plan from your
+                      unfinished tasks.
                     </p>
                   </div>
                 ) : (
