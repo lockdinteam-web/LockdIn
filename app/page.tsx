@@ -25,6 +25,8 @@ import {
   Shield,
   Medal,
   Share2,
+  Clock3,
+  ArrowUpRight,
 } from "lucide-react";
 
 type Priority = "High" | "Medium" | "Low";
@@ -1094,16 +1096,16 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#030712] text-white">
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.18),transparent_28%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.12),transparent_24%),radial-gradient(circle_at_bottom_right,rgba(244,63,94,0.08),transparent_26%)]" />
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.16),transparent_28%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.12),transparent_24%),radial-gradient(circle_at_bottom_right,rgba(244,63,94,0.08),transparent_26%)]" />
       <div className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,transparent_18%,transparent_82%,rgba(255,255,255,0.02)_100%)]" />
 
       <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
         <div className="space-y-6">
-          <section className="overflow-hidden rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,#07111f_0%,#081325_100%)] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:p-8">
+          <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,#07111f_0%,#091427_100%)] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:p-8">
             <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
               <div className="min-w-0">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="inline-flex w-fit items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-300 sm:text-sm">
+                  <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-300 sm:text-sm">
                     <Sparkles className="h-4 w-4 text-blue-300" />
                     Built for students who need to lock in
                   </div>
@@ -1113,11 +1115,11 @@ export default function HomePage() {
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500 text-sm font-semibold text-white">
                         {profile.username?.[0]?.toUpperCase()}
                       </div>
-                      <div className="text-left">
-                        <p className="text-sm font-semibold text-white">
+                      <div className="min-w-0 text-left">
+                        <p className="truncate text-sm font-semibold text-white">
                           @{profile.username}
                         </p>
-                        <p className="text-xs text-slate-400">
+                        <p className="truncate text-xs text-slate-400">
                           {profile.course} • {profile.university}
                         </p>
                       </div>
@@ -1132,17 +1134,19 @@ export default function HomePage() {
                   )}
                 </div>
 
-                <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-5xl xl:text-6xl">
-                  Don’t get cooked this semester.
-                </h1>
+                <div className="mt-6 max-w-3xl">
+                  <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-5xl xl:text-6xl">
+                    Your semester,
+                    <br className="hidden sm:block" /> under control.
+                  </h1>
+                  <p className="mt-4 max-w-2xl text-base leading-8 text-slate-300 sm:text-lg">
+                    See what matters today, how cooked you are, what to study next,
+                    and where you stand against your friends.
+                  </p>
+                </div>
 
-                <p className="mt-4 max-w-2xl text-base leading-8 text-slate-300 sm:text-lg">
-                  LockdIn keeps your workload, study plan, cooked score, and friend
-                  pressure in one place so you always know what matters next.
-                </p>
-
-                <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-2xl border border-orange-400/20 bg-orange-500/10 px-4 py-4">
+                <div className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-3xl border border-orange-400/20 bg-orange-500/10 p-4">
                     <p className="text-[11px] uppercase tracking-[0.2em] text-orange-200/70">
                       Streak
                     </p>
@@ -1157,7 +1161,7 @@ export default function HomePage() {
                     </p>
                   </div>
 
-                  <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-4">
+                  <div className="rounded-3xl border border-cyan-400/20 bg-cyan-500/10 p-4">
                     <p className="text-[11px] uppercase tracking-[0.2em] text-cyan-200/70">
                       Level
                     </p>
@@ -1172,7 +1176,7 @@ export default function HomePage() {
                     </p>
                   </div>
 
-                  <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-4">
+                  <div className="rounded-3xl border border-emerald-400/20 bg-emerald-500/10 p-4">
                     <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-200/70">
                       Completion
                     </p>
@@ -1184,7 +1188,7 @@ export default function HomePage() {
                     </p>
                   </div>
 
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+                  <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
                     <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
                       Due This Week
                     </p>
@@ -1205,6 +1209,7 @@ export default function HomePage() {
                     <ClipboardList className="h-4 w-4" />
                     Open Tasks
                   </Link>
+
                   <Link
                     href="/planner"
                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-medium text-white transition hover:bg-white/10"
@@ -1212,6 +1217,7 @@ export default function HomePage() {
                     <CalendarDays className="h-4 w-4" />
                     Open Planner
                   </Link>
+
                   <Link
                     href="/badges"
                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-6 py-3 text-sm font-medium text-amber-200 transition hover:border-amber-400 hover:bg-amber-500/20"
@@ -1219,6 +1225,7 @@ export default function HomePage() {
                     <Medal className="h-4 w-4" />
                     Badges
                   </Link>
+
                   <Link
                     href="/degree-tracker"
                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-400/20 bg-blue-500/10 px-6 py-3 text-sm font-medium text-blue-200 transition hover:border-blue-400 hover:bg-blue-500/20"
@@ -1236,7 +1243,7 @@ export default function HomePage() {
               </div>
 
               <div
-                className={`relative rounded-[28px] border border-white/10 bg-white/[0.045] p-5 backdrop-blur-xl sm:p-6 ${getCookedGlowClass(
+                className={`relative rounded-[30px] border border-white/10 bg-white/[0.045] p-5 backdrop-blur-xl sm:p-6 ${getCookedGlowClass(
                   cooked.score
                 )}`}
               >
@@ -1357,7 +1364,7 @@ export default function HomePage() {
                     </button>
                   </div>
 
-                  <div className="mt-5 rounded-[22px] border border-white/10 bg-white p-4">
+                  <div className="mt-5 rounded-[24px] border border-white/10 bg-white p-4">
                     <Image
                       src="/logo.png"
                       alt="LockdIn logo"
@@ -1372,244 +1379,187 @@ export default function HomePage() {
             </div>
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-7">
+          <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+            <div className="rounded-[30px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-7">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <div className="inline-flex items-center gap-2 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-400/20">
-                    <Trophy className="h-3.5 w-3.5" />
-                    Social Pressure
+                  <div className="inline-flex items-center gap-2 rounded-full bg-blue-500/15 px-3 py-1 text-xs font-medium text-blue-300 ring-1 ring-blue-400/20">
+                    <Target className="h-3.5 w-3.5" />
+                    Today
                   </div>
                   <h2 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
-                    🔥 Cooked Leaderboard
+                    What needs attention now
                   </h2>
                   <p className="mt-2 text-sm text-slate-400">
-                    {leaderboardHeadline}
+                    Your most important work and the next things to move.
                   </p>
-                  {yourRank ? (
-                    <p className="mt-2 text-xs text-slate-500">
-                      Your current rank: #{yourRank}
-                    </p>
-                  ) : null}
                 </div>
 
-                {isLoggedIn ? (
-                  <button
-                    type="button"
-                    onClick={() => handleShareLeaderboard(sortedLeaderboard)}
-                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
-                  >
-                    Share leaderboard
-                  </button>
-                ) : null}
+                <Link
+                  href="/performance"
+                  className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                >
+                  Open dashboard
+                  <ArrowUpRight className="h-4 w-4" />
+                </Link>
               </div>
 
-              {isLoggedIn ? (
-                <>
-                  <form
-                    onSubmit={handleAddFriend}
-                    className="mt-6 grid gap-3 md:grid-cols-[1fr_auto]"
-                  >
-                    <input
-                      type="text"
-                      value={friendUsername}
-                      onChange={(e) => setFriendUsername(e.target.value)}
-                      placeholder="Add friend by username"
-                      className="rounded-2xl border border-white/10 bg-[#101b38] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
-                    />
+              <div className="mt-6 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-3xl border border-white/10 bg-[#101b38] p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                        Biggest Threat
+                      </p>
+                      <p className="mt-2 text-lg font-semibold text-white">
+                        {loading ? "Loading..." : biggestThreat ? biggestThreat.title : "No immediate threats"}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3">
+                      <Shield className="h-5 w-5 text-rose-300" />
+                    </div>
+                  </div>
 
-                    <button
-                      type="submit"
-                      disabled={addingFriend}
-                      className="rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {addingFriend ? "Adding..." : "Add friend"}
-                    </button>
-                  </form>
+                  {loading ? (
+                    <p className="mt-4 text-sm text-slate-400">
+                      Loading your biggest risk...
+                    </p>
+                  ) : biggestThreat ? (
+                    <>
+                      <p className="mt-3 text-sm text-slate-400">
+                        {biggestThreat.module}
+                      </p>
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
+                            biggestThreat.priority
+                          )}`}
+                        >
+                          {biggestThreat.priority}
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                          {getUpcomingLabel(getDaysUntil(biggestThreat.dueDate))}
+                        </span>
+                      </div>
 
-                  <p className="mt-3 text-xs text-slate-500">
-                    Add friends by their LockdIn username.
+                      <Link
+                        href="/tasks"
+                        className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
+                      >
+                        Go to tasks
+                        <ChevronRight className="h-4 w-4" />
+                      </Link>
+                    </>
+                  ) : (
+                    <p className="mt-4 text-sm text-slate-400">
+                      Clean board. Keep it that way.
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-3xl border border-white/10 bg-[#101b38] p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                        Coach View
+                      </p>
+                      <p className="mt-2 text-lg font-semibold text-white">
+                        {loading ? "Loading..." : coachTitle}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-3">
+                      <Sparkles className="h-5 w-5 text-blue-300" />
+                    </div>
+                  </div>
+
+                  <p className="mt-4 text-sm leading-7 text-slate-300">
+                    {loading ? "Syncing your coach view..." : coachMessage}
                   </p>
 
-                  {friendError ? (
-                    <p className="mt-3 text-sm text-rose-300">{friendError}</p>
-                  ) : null}
-
-                  {friendSuccess ? (
-                    <p className="mt-3 text-sm text-emerald-300">{friendSuccess}</p>
-                  ) : null}
-
-                  <div className="mt-5 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setLeaderboardMode("mostCooked")}
-                      className={`rounded-full px-4 py-2 text-sm transition ${
-                        leaderboardMode === "mostCooked"
-                          ? "bg-rose-500/15 text-rose-300 ring-1 ring-rose-400/20"
-                          : "bg-white/5 text-slate-300 hover:bg-white/10"
-                      }`}
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                    <Link
+                      href="/tasks"
+                      className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
                     >
-                      Most Cooked
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLeaderboardMode("biggestComeback")}
-                      className={`rounded-full px-4 py-2 text-sm transition ${
-                        leaderboardMode === "biggestComeback"
-                          ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/20"
-                          : "bg-white/5 text-slate-300 hover:bg-white/10"
-                      }`}
+                      Open Tasks
+                    </Link>
+                    <Link
+                      href="/planner"
+                      className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
                     >
-                      Biggest Comeback
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLeaderboardMode("mostLockedIn")}
-                      className={`rounded-full px-4 py-2 text-sm transition ${
-                        leaderboardMode === "mostLockedIn"
-                          ? "bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/20"
-                          : "bg-white/5 text-slate-300 hover:bg-white/10"
-                      }`}
-                    >
-                      Most Locked In
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLeaderboardMode("mostActive")}
-                      className={`rounded-full px-4 py-2 text-sm transition ${
-                        leaderboardMode === "mostActive"
-                          ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/20"
-                          : "bg-white/5 text-slate-300 hover:bg-white/10"
-                      }`}
-                    >
-                      Most Active
-                    </button>
+                      Build study plan
+                    </Link>
                   </div>
+                </div>
+              </div>
 
-                  <div className="mt-5 space-y-3">
-                    {leaderboardLoading ? (
-                      <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                        Loading leaderboard...
-                      </div>
-                    ) : sortedLeaderboard.length === 0 ? (
-                      <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                        No one on the leaderboard yet. Add a friend by username to
-                        start the chaos.
-                      </div>
-                    ) : (
-                      sortedLeaderboard.slice(0, 5).map((entry, index) => (
-                        <div
-                          key={entry.id}
-                          className={`rounded-2xl border p-4 ${getLeaderboardAccent(
-                            entry.cookedScore
-                          )} ${entry.isYou ? "ring-1 ring-blue-400/30" : ""}`}
-                        >
-                          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                  #{entry.rank}
-                                </span>
+              <div className="mt-4 rounded-3xl border border-white/10 bg-[#101b38] p-5">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                      Today’s Focus
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-white">
+                      Top tasks to hit first
+                    </p>
+                  </div>
+                  <Link
+                    href="/tasks"
+                    className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
+                  >
+                    Manage tasks
+                  </Link>
+                </div>
 
-                                {index === 0 ? (
-                                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1 text-xs text-amber-300">
-                                    <span className="inline-flex items-center gap-1">
-                                      <Crown className="h-3 w-3" />
-                                      Top
-                                    </span>
-                                  </span>
-                                ) : null}
-
-                                <p className="break-words text-base font-semibold text-white">
-                                  @{entry.username}
-                                </p>
-
-                                {entry.isYou ? (
-                                  <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs text-blue-200">
-                                    You
-                                  </span>
-                                ) : null}
-
-                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                  {entry.roastLabel}
-                                </span>
-                              </div>
-
-                              <p className="mt-2 text-sm text-slate-400">
-                                {entry.course} • {entry.university}
-                              </p>
-
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                  {entry.pendingTasks} active task
-                                  {entry.pendingTasks === 1 ? "" : "s"}
-                                </span>
-                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                  {entry.completionRate}% completion
-                                </span>
-                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                  {entry.streak} day streak
-                                </span>
-                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                  {entry.momentumLabel}
-                                </span>
-                                <span
-                                  className={`rounded-full border px-3 py-1 text-xs ${
-                                    entry.weeklyCookedChange < 0
-                                      ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
-                                      : entry.weeklyCookedChange > 0
-                                      ? "border-rose-400/20 bg-rose-500/10 text-rose-300"
-                                      : "border-white/10 bg-white/5 text-slate-300"
-                                  }`}
-                                >
-                                  7d cooked: {entry.weeklyCookedChange > 0 ? "+" : ""}
-                                  {entry.weeklyCookedChange}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="text-left sm:text-right">
-                              <p
-                                className={`text-3xl font-semibold sm:text-4xl ${getCookedTextColor(
-                                  entry.cookedScore
-                                )}`}
-                              >
-                                {entry.cookedScore}
-                              </p>
-                              <p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                                cooked score
-                              </p>
-                              <p className="mt-2 text-sm text-slate-300">
-                                {entry.status}
-                              </p>
-                            </div>
+                <div className="mt-5 space-y-3">
+                  {loading ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-5 text-slate-300">
+                      Loading focus tasks...
+                    </div>
+                  ) : todayFocus.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-5 text-slate-300">
+                      No active tasks right now.
+                    </div>
+                  ) : (
+                    todayFocus.map((task, index) => (
+                      <div
+                        key={task.id}
+                        className="rounded-2xl border border-white/10 bg-white/5 p-4"
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                              Focus {index + 1}
+                            </p>
+                            <p className="mt-2 break-words text-base font-medium text-white">
+                              {task.title}
+                            </p>
+                            <p className="mt-2 text-sm text-slate-400">{task.module}</p>
                           </div>
 
-                          <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-black/20">
-                            <div
-                              className={`h-full rounded-full ${getCookedBarClass(
-                                entry.cookedScore
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
+                                task.priority
                               )}`}
-                              style={{
-                                width: `${Math.max(6, entry.cookedScore)}%`,
-                              }}
-                            />
+                            >
+                              {task.priority}
+                            </span>
+                            <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                              {getUpcomingLabel(getDaysUntil(task.dueDate))}
+                            </span>
                           </div>
                         </div>
-                      ))
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="mt-6 rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                  Log in to start a cooked leaderboard with your friends.
+                      </div>
+                    ))
+                  )}
                 </div>
-              )}
+              </div>
             </div>
 
             <div className="space-y-6">
               <div
-                className={`rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6 ${getCookedGlowClass(
+                className={`rounded-[30px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6 ${getCookedGlowClass(
                   cooked.score
                 )}`}
               >
@@ -1684,239 +1634,311 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
-                <div className="inline-flex items-center gap-2 rounded-full bg-blue-500/15 px-3 py-1 text-xs font-medium text-blue-300 ring-1 ring-blue-400/20">
-                  <Target className="h-3.5 w-3.5" />
-                  AI Coach
+              <div className="rounded-[30px] border border-white/10 bg-[linear-gradient(135deg,#111827_0%,#0f172a_100%)] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
+                <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10">
+                  <Share2 className="h-3.5 w-3.5" />
+                  Shareable Moment
                 </div>
 
-                <h2 className="mt-4 text-2xl font-semibold tracking-tight">
-                  {loading ? "Loading..." : coachTitle}
-                </h2>
+                <h3 className="mt-4 text-2xl font-semibold text-white">
+                  Your latest flex
+                </h3>
 
-                <p className="mt-4 text-sm leading-7 text-slate-300">
-                  {loading ? "Syncing your coach view..." : coachMessage}
-                </p>
-
-                <div className="mt-5 rounded-2xl border border-white/10 bg-[#101b38] p-4">
+                <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-5">
                   <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                    Recommended next step
+                    Current snapshot
                   </p>
-                  <p className="mt-3 text-sm leading-7 text-white">
-                    {loading
-                      ? "Loading recommendation..."
-                      : stats.overdue > 0
-                      ? "Open Tasks and complete the most overdue item first."
-                      : stats.highPriority > 0
-                      ? "Finish your next high-priority task before switching context."
-                      : stats.pending > 0
-                      ? "Use Planner to assign focused time to your remaining workload."
-                      : "Use Planner to map out your next study block while you’re ahead."}
+                  <h4 className="mt-2 text-2xl font-semibold text-white">
+                    {getRoastLabel(cooked.score)}
+                  </h4>
+                  <p className="mt-2 text-sm text-slate-300">
+                    You’re on {cooked.score}/100 with {stats.pending} active tasks and a{" "}
+                    {profile ? profile.streak : 0}-day streak.
                   </p>
-                </div>
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  <Link
-                    href="/tasks"
-                    className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
+                  <div className="mt-5 grid grid-cols-3 gap-3">
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                        Score
+                      </p>
+                      <p className="mt-2 text-xl font-semibold text-white">
+                        {cooked.score}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                        XP
+                      </p>
+                      <p className="mt-2 text-xl font-semibold text-white">
+                        {profile?.xp ?? 0}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                        Streak
+                      </p>
+                      <p className="mt-2 text-xl font-semibold text-white">
+                        {profile ? profile.streak : 0}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleShareScore(cooked.score)}
+                    className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
                   >
-                    Open Tasks
-                  </Link>
-                  <Link
-                    href="/planner"
-                    className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
-                  >
-                    Build study plan
-                  </Link>
+                    <Share2 className="h-4 w-4" />
+                    Share this
+                  </button>
                 </div>
               </div>
             </div>
           </section>
 
-          <section className="grid gap-6 lg:grid-cols-3">
-            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
-              <div className="flex items-center justify-between gap-4">
-                <h3 className="text-xl font-semibold">Biggest Threat</h3>
-                <Link
-                  href="/performance"
-                  className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
-                >
-                  Open dashboard
-                </Link>
-              </div>
-
-              {loading ? (
-                <div className="mt-5 rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                  Loading your biggest threat...
+          <section className="rounded-[30px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-7">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-400/20">
+                  <Trophy className="h-3.5 w-3.5" />
+                  Social Pressure
                 </div>
-              ) : biggestThreat ? (
-                <div className="mt-5 rounded-2xl border border-white/10 bg-[#101b38] p-5">
-                  <div className="flex flex-col gap-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <p className="break-words text-lg font-semibold text-white">
-                          {biggestThreat.title}
-                        </p>
-                        <p className="mt-2 text-sm text-slate-400">
-                          {biggestThreat.module}
-                        </p>
-                      </div>
-                      <span
-                        className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
-                          biggestThreat.priority
-                        )}`}
-                      >
-                        {biggestThreat.priority}
-                      </span>
-                    </div>
-
-                    <div>
-                      <p className="text-sm text-slate-300">
-                        Due {biggestThreat.dueDate}
-                      </p>
-                      <p className="mt-2 text-sm text-slate-500">
-                        {getUpcomingLabel(getDaysUntil(biggestThreat.dueDate))}
-                      </p>
-                    </div>
-
-                    <Link
-                      href="/tasks"
-                      className="inline-flex items-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
-                    >
-                      Go to tasks
-                      <ChevronRight className="h-4 w-4" />
-                    </Link>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-5 rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                  No immediate threats right now.
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
-              <div className="flex items-center justify-between gap-4">
-                <h3 className="text-xl font-semibold">Today’s Focus</h3>
-                <Link
-                  href="/tasks"
-                  className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
-                >
-                  Manage tasks
-                </Link>
-              </div>
-
-              <div className="mt-5 space-y-3">
-                {loading ? (
-                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                    Loading focus tasks...
-                  </div>
-                ) : todayFocus.length === 0 ? (
-                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                    No active tasks right now.
-                  </div>
-                ) : (
-                  todayFocus.map((task, index) => (
-                    <div
-                      key={task.id}
-                      className="rounded-2xl border border-white/10 bg-[#101b38] p-4"
-                    >
-                      <div className="flex flex-col gap-3">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0">
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                              Focus {index + 1}
-                            </p>
-                            <p className="mt-2 break-words text-base font-medium text-white">
-                              {task.title}
-                            </p>
-                            <p className="mt-2 text-sm text-slate-400">{task.module}</p>
-                          </div>
-
-                          <span
-                            className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
-                              task.priority
-                            )}`}
-                          >
-                            {task.priority}
-                          </span>
-                        </div>
-
-                        <p className="text-sm text-slate-500">
-                          {getUpcomingLabel(getDaysUntil(task.dueDate))}
-                        </p>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#111827_0%,#0f172a_100%)] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10">
-                <Share2 className="h-3.5 w-3.5" />
-                Shareable Moment
-              </div>
-
-              <h3 className="mt-4 text-2xl font-semibold text-white">
-                Your latest flex
-              </h3>
-
-              <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                  Current snapshot
+                <h2 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
+                  Cooked Leaderboard
+                </h2>
+                <p className="mt-2 text-sm text-slate-400">
+                  {leaderboardHeadline}
                 </p>
-                <h4 className="mt-2 text-2xl font-semibold text-white">
-                  {getRoastLabel(cooked.score)}
-                </h4>
-                <p className="mt-2 text-sm text-slate-300">
-                  You’re on {cooked.score}/100 with {stats.pending} active tasks and a{" "}
-                  {profile ? profile.streak : 0}-day streak.
-                </p>
+                {yourRank ? (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Your current rank: #{yourRank}
+                  </p>
+                ) : null}
+              </div>
 
-                <div className="mt-5 grid grid-cols-3 gap-3">
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                      Score
-                    </p>
-                    <p className="mt-2 text-xl font-semibold text-white">
-                      {cooked.score}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                      XP
-                    </p>
-                    <p className="mt-2 text-xl font-semibold text-white">
-                      {profile?.xp ?? 0}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                      Streak
-                    </p>
-                    <p className="mt-2 text-xl font-semibold text-white">
-                      {profile ? profile.streak : 0}
-                    </p>
-                  </div>
-                </div>
-
+              {isLoggedIn ? (
                 <button
                   type="button"
-                  onClick={() => handleShareScore(cooked.score)}
-                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                  onClick={() => handleShareLeaderboard(sortedLeaderboard)}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
                 >
-                  <Share2 className="h-4 w-4" />
-                  Share this
+                  Share leaderboard
                 </button>
-              </div>
+              ) : null}
             </div>
+
+            {isLoggedIn ? (
+              <>
+                <form
+                  onSubmit={handleAddFriend}
+                  className="mt-6 grid gap-3 md:grid-cols-[1fr_auto]"
+                >
+                  <input
+                    type="text"
+                    value={friendUsername}
+                    onChange={(e) => setFriendUsername(e.target.value)}
+                    placeholder="Add friend by username"
+                    className="rounded-2xl border border-white/10 bg-[#101b38] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={addingFriend}
+                    className="rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {addingFriend ? "Adding..." : "Add friend"}
+                  </button>
+                </form>
+
+                <p className="mt-3 text-xs text-slate-500">
+                  Add friends by their LockdIn username.
+                </p>
+
+                {friendError ? (
+                  <p className="mt-3 text-sm text-rose-300">{friendError}</p>
+                ) : null}
+
+                {friendSuccess ? (
+                  <p className="mt-3 text-sm text-emerald-300">{friendSuccess}</p>
+                ) : null}
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setLeaderboardMode("mostCooked")}
+                    className={`rounded-full px-4 py-2 text-sm transition ${
+                      leaderboardMode === "mostCooked"
+                        ? "bg-rose-500/15 text-rose-300 ring-1 ring-rose-400/20"
+                        : "bg-white/5 text-slate-300 hover:bg-white/10"
+                    }`}
+                  >
+                    Most Cooked
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLeaderboardMode("biggestComeback")}
+                    className={`rounded-full px-4 py-2 text-sm transition ${
+                      leaderboardMode === "biggestComeback"
+                        ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/20"
+                        : "bg-white/5 text-slate-300 hover:bg-white/10"
+                    }`}
+                  >
+                    Biggest Comeback
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLeaderboardMode("mostLockedIn")}
+                    className={`rounded-full px-4 py-2 text-sm transition ${
+                      leaderboardMode === "mostLockedIn"
+                        ? "bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/20"
+                        : "bg-white/5 text-slate-300 hover:bg-white/10"
+                    }`}
+                  >
+                    Most Locked In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLeaderboardMode("mostActive")}
+                    className={`rounded-full px-4 py-2 text-sm transition ${
+                      leaderboardMode === "mostActive"
+                        ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/20"
+                        : "bg-white/5 text-slate-300 hover:bg-white/10"
+                    }`}
+                  >
+                    Most Active
+                  </button>
+                </div>
+
+                <div className="mt-5 space-y-3">
+                  {leaderboardLoading ? (
+                    <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                      Loading leaderboard...
+                    </div>
+                  ) : sortedLeaderboard.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                      No one on the leaderboard yet. Add a friend by username to
+                      start the chaos.
+                    </div>
+                  ) : (
+                    sortedLeaderboard.slice(0, 5).map((entry, index) => (
+                      <div
+                        key={entry.id}
+                        className={`rounded-3xl border p-4 ${getLeaderboardAccent(
+                          entry.cookedScore
+                        )} ${entry.isYou ? "ring-1 ring-blue-400/30" : ""}`}
+                      >
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                #{entry.rank}
+                              </span>
+
+                              {index === 0 ? (
+                                <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1 text-xs text-amber-300">
+                                  <span className="inline-flex items-center gap-1">
+                                    <Crown className="h-3 w-3" />
+                                    Top
+                                  </span>
+                                </span>
+                              ) : null}
+
+                              <p className="break-words text-base font-semibold text-white">
+                                @{entry.username}
+                              </p>
+
+                              {entry.isYou ? (
+                                <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs text-blue-200">
+                                  You
+                                </span>
+                              ) : null}
+
+                              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                {entry.roastLabel}
+                              </span>
+                            </div>
+
+                            <p className="mt-2 text-sm text-slate-400">
+                              {entry.course} • {entry.university}
+                            </p>
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                {entry.pendingTasks} active task
+                                {entry.pendingTasks === 1 ? "" : "s"}
+                              </span>
+                              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                {entry.completionRate}% completion
+                              </span>
+                              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                {entry.streak} day streak
+                              </span>
+                              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                {entry.momentumLabel}
+                              </span>
+                              <span
+                                className={`rounded-full border px-3 py-1 text-xs ${
+                                  entry.weeklyCookedChange < 0
+                                    ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
+                                    : entry.weeklyCookedChange > 0
+                                    ? "border-rose-400/20 bg-rose-500/10 text-rose-300"
+                                    : "border-white/10 bg-white/5 text-slate-300"
+                                }`}
+                              >
+                                7d cooked: {entry.weeklyCookedChange > 0 ? "+" : ""}
+                                {entry.weeklyCookedChange}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-left sm:text-right">
+                            <p
+                              className={`text-3xl font-semibold sm:text-4xl ${getCookedTextColor(
+                                entry.cookedScore
+                              )}`}
+                            >
+                              {entry.cookedScore}
+                            </p>
+                            <p className="mt-1 text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                              cooked score
+                            </p>
+                            <p className="mt-2 text-sm text-slate-300">
+                              {entry.status}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-black/20">
+                          <div
+                            className={`h-full rounded-full ${getCookedBarClass(
+                              entry.cookedScore
+                            )}`}
+                            style={{
+                              width: `${Math.max(6, entry.cookedScore)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="mt-6 rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                Log in to start a cooked leaderboard with your friends.
+              </div>
+            )}
           </section>
 
           <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+            <div className="rounded-[30px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
               <div className="flex items-center justify-between gap-4">
-                <h3 className="text-xl font-semibold sm:text-2xl">Recent Tasks</h3>
+                <div>
+                  <h3 className="text-xl font-semibold sm:text-2xl">Recent Tasks</h3>
+                  <p className="mt-2 text-sm text-slate-400">
+                    Your latest task activity and deadlines.
+                  </p>
+                </div>
                 <Link
                   href="/tasks"
                   className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
@@ -1950,9 +1972,10 @@ export default function HomePage() {
                             {task.title}
                           </p>
                           <p className="mt-2 text-sm text-slate-400">{task.module}</p>
-                          <p className="mt-2 text-sm text-slate-500">
-                            Due: {task.dueDate}
-                          </p>
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+                            <Clock3 className="h-4 w-4" />
+                            <span>Due: {task.dueDate}</span>
+                          </div>
                         </div>
 
                         <span
@@ -1970,11 +1993,16 @@ export default function HomePage() {
             </div>
 
             <div className="space-y-6">
-              <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+              <div className="rounded-[30px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
                 <div className="flex items-center justify-between gap-4">
-                  <h3 className="text-xl font-semibold sm:text-2xl">
-                    Today’s Study Plan
-                  </h3>
+                  <div>
+                    <h3 className="text-xl font-semibold sm:text-2xl">
+                      Today’s Study Plan
+                    </h3>
+                    <p className="mt-2 text-sm text-slate-400">
+                      Your blocks for today, so you know what’s next.
+                    </p>
+                  </div>
                   <Link
                     href="/planner"
                     className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
@@ -2016,9 +2044,14 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+              <div className="rounded-[30px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
                 <div className="flex items-center justify-between gap-4">
-                  <h3 className="text-xl font-semibold sm:text-2xl">Quick Access</h3>
+                  <div>
+                    <h3 className="text-xl font-semibold sm:text-2xl">Quick Access</h3>
+                    <p className="mt-2 text-sm text-slate-400">
+                      Jump straight to the parts of LockdIn you use most.
+                    </p>
+                  </div>
                   <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
                     Move faster
                   </div>
