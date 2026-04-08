@@ -507,10 +507,7 @@ export default function HomePage() {
         .or(`user_id.eq.${userId},friend_id.eq.${userId}`);
 
       if (connectionError) {
-        console.error(
-          "Error loading friend connections:",
-          connectionError.message
-        );
+        console.error("Error loading friend connections:", connectionError.message);
         setLeaderboard([]);
         return;
       }
@@ -525,6 +522,11 @@ export default function HomePage() {
 
       const allIds = Array.from(new Set([userId, ...friendIds]));
 
+      console.log("Leaderboard userId:", userId);
+      console.log("Friend connection rows:", connectionRows);
+      console.log("Friend IDs:", friendIds);
+      console.log("All IDs:", allIds);
+
       const { data: profileRows, error: profileError } = await supabase
         .from("profiles")
         .select("id, username, university, course, avatar_url, display_name")
@@ -532,8 +534,6 @@ export default function HomePage() {
 
       if (profileError) {
         console.error("Error loading leaderboard profiles:", profileError.message);
-        setLeaderboard([]);
-        return;
       }
 
       const { data: snapshotRows, error: snapshotError } = await supabase
@@ -545,12 +545,7 @@ export default function HomePage() {
         .gte("snapshot_date", getDateDaysAgo(14));
 
       if (snapshotError) {
-        console.error(
-          "Error loading leaderboard snapshots:",
-          snapshotError.message
-        );
-        setLeaderboard([]);
-        return;
+        console.error("Error loading leaderboard snapshots:", snapshotError.message);
       }
 
       const { data: activityRows, error: activityError } = await supabase
@@ -561,9 +556,11 @@ export default function HomePage() {
 
       if (activityError) {
         console.error("Error loading activity days:", activityError.message);
-        setLeaderboard([]);
-        return;
       }
+
+      console.log("Profile rows:", profileRows);
+      console.log("Snapshot rows:", snapshotRows);
+      console.log("Activity rows:", activityRows);
 
       const snapshotsByUser = new Map<string, LeaderboardSnapshotRow[]>();
       ((snapshotRows as LeaderboardSnapshotRow[] | null) ?? []).forEach((row) => {
@@ -649,7 +646,9 @@ export default function HomePage() {
         };
       });
 
-      setLeaderboard(entries);
+      console.log("Final leaderboard entries:", entries);
+
+      setLeaderboard(entries.filter((entry) => entry.id && entry.username));
     } catch (error) {
       console.error("Unexpected leaderboard error:", error);
       setLeaderboard([]);
@@ -666,7 +665,7 @@ export default function HomePage() {
       return;
     }
 
-    const cleanUsername = friendUsername.trim().replace(/^@/, "");
+    const cleanUsername = friendUsername.trim().replace(/^@/, "").toLowerCase();
 
     if (!cleanUsername) {
       setFriendError("Enter a username first.");
@@ -678,17 +677,21 @@ export default function HomePage() {
       setFriendError("");
       setFriendSuccess("");
 
-      const { data: foundUser, error: findError } = await supabase
+      const { data: foundUsers, error: findError } = await supabase
         .from("profiles")
         .select("id, username")
-        .ilike("username", cleanUsername)
-        .maybeSingle();
+        .ilike("username", cleanUsername);
 
       if (findError) {
         console.error("Could not search for username:", findError);
         setFriendError(findError.message || "Could not search for that username.");
         return;
       }
+
+      const foundUser =
+        foundUsers?.find(
+          (user) => user.username?.toLowerCase() === cleanUsername
+        ) ?? null;
 
       if (!foundUser) {
         setFriendError("No user found with that username.");
@@ -700,13 +703,12 @@ export default function HomePage() {
         return;
       }
 
-      const { data: existingConnection, error: existingError } = await supabase
+      const { data: existingConnections, error: existingError } = await supabase
         .from("friend_connections")
         .select("user_id, friend_id")
         .or(
           `and(user_id.eq.${currentUserId},friend_id.eq.${foundUser.id}),and(user_id.eq.${foundUser.id},friend_id.eq.${currentUserId})`
-        )
-        .maybeSingle();
+        );
 
       if (existingError) {
         console.error("Could not check existing connections:", existingError);
@@ -716,7 +718,7 @@ export default function HomePage() {
         return;
       }
 
-      if (existingConnection) {
+      if ((existingConnections ?? []).length > 0) {
         setFriendError("That friend is already on your leaderboard.");
         return;
       }
@@ -1502,7 +1504,7 @@ export default function HomePage() {
                     </form>
 
                     <p className="mt-3 text-xs text-slate-500">
-                      Friend scores now show from their latest saved LockdIn sync.
+                      Friend scores show from their latest saved LockdIn sync.
                     </p>
 
                     {friendError ? (
