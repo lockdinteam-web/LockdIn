@@ -335,17 +335,6 @@ export default function PlannerPage() {
 
         setTasks(freshTasks);
 
-        if (prefRes.error) {
-          console.error(
-            "Error loading planner preferences:",
-            prefRes.error.message
-          );
-        }
-
-        if (planRes.error) {
-          console.error("Error loading study plan:", planRes.error.message);
-        }
-
         if (prefRes.data) {
           setPreferences({
             availableDays:
@@ -399,7 +388,7 @@ export default function PlannerPage() {
 
     if (userError || !user) {
       window.location.href = "/login";
-      return false;
+      return { ok: false, error: "Not logged in" };
     }
 
     const { error } = await supabase.from("planner_preferences").upsert(
@@ -418,18 +407,18 @@ export default function PlannerPage() {
 
     if (error) {
       console.error("Error saving planner preferences:", error.message);
-      return false;
+      return { ok: false, error: error.message };
     }
 
-    return true;
+    return { ok: true, error: null };
   }
 
   async function handleSavePreferences() {
-    const saved = await savePreferences(preferences);
+    const result = await savePreferences(preferences);
     setPlannerMessage(
-      saved
+      result.ok
         ? "Planner preferences saved."
-        : "Could not save planner preferences."
+        : `Could not save planner preferences: ${result.error}`
     );
   }
 
@@ -445,12 +434,6 @@ export default function PlannerPage() {
 
       if (userError || !user) {
         window.location.href = "/login";
-        return;
-      }
-
-      const savedPrefs = await savePreferences(preferences);
-      if (!savedPrefs) {
-        setPlannerMessage("Could not save planner preferences.");
         return;
       }
 
@@ -484,11 +467,8 @@ export default function PlannerPage() {
       }));
 
       setPlan(localPlan);
-      setPlannerMessage(
-        `Generated ${localPlan.length} study block${
-          localPlan.length === 1 ? "" : "s"
-        }.`
-      );
+
+      const prefResult = await savePreferences(preferences);
 
       const { error: deleteError } = await supabase
         .from("study_plan_blocks")
@@ -498,7 +478,7 @@ export default function PlannerPage() {
       if (deleteError) {
         console.error("Error clearing old study plan:", deleteError.message);
         setPlannerMessage(
-          "Plan generated in the UI, but old saved blocks could not be cleared."
+          `Plan generated in the UI, but old saved blocks could not be cleared: ${deleteError.message}`
         );
         return;
       }
@@ -522,7 +502,7 @@ export default function PlannerPage() {
       if (insertError) {
         console.error("Error saving generated study plan:", insertError.message);
         setPlannerMessage(
-          "Plan generated in the UI, but saving failed. Check Supabase RLS/table setup."
+          `Plan generated in the UI, but saving failed: ${insertError.message}`
         );
         return;
       }
@@ -536,6 +516,9 @@ export default function PlannerPage() {
 
       if (refreshError) {
         console.error("Error reloading saved study plan:", refreshError.message);
+        setPlannerMessage(
+          `Plan generated and saved, but reload failed: ${refreshError.message}`
+        );
         return;
       }
 
@@ -554,11 +537,18 @@ export default function PlannerPage() {
       }));
 
       setPlan(mappedPlan);
-      setPlannerMessage(
-        `Plan generated and saved successfully with ${mappedPlan.length} block${
-          mappedPlan.length === 1 ? "" : "s"
-        }.`
-      );
+
+      if (prefResult.ok) {
+        setPlannerMessage(
+          `Plan generated and saved successfully with ${mappedPlan.length} block${
+            mappedPlan.length === 1 ? "" : "s"
+          }.`
+        );
+      } else {
+        setPlannerMessage(
+          `Plan generated and saved, but planner preferences could not be saved: ${prefResult.error}`
+        );
+      }
     } catch (error) {
       console.error("Unexpected generate plan error:", error);
       setPlannerMessage("Something went wrong while generating your plan.");
