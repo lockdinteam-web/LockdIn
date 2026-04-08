@@ -4,7 +4,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import AppShell from "@/components/AppShell";
 import { useTasks } from "@/components/TasksProvider";
 import { supabase } from "@/lib/supabase";
 import {
@@ -13,19 +12,19 @@ import {
   type StudyBlock,
 } from "@/lib/calculateCookedScore";
 import {
+  Trophy,
   Flame,
   Sparkles,
   ClipboardList,
   CalendarDays,
+  BarChart3,
   ChevronRight,
   Crown,
   Target,
   Zap,
   Shield,
-  Trophy,
-  Medal,
-  Share2,
   TrendingUp,
+  Medal,
 } from "lucide-react";
 
 type Priority = "High" | "Medium" | "Low";
@@ -35,6 +34,16 @@ type HomeTask = {
   title: string;
   module: string;
   dueDate: string;
+  priority: Priority;
+  completed: boolean;
+};
+
+type DatabaseTask = {
+  id: string;
+  user_id: string;
+  title: string;
+  module: string;
+  due_date: string;
   priority: Priority;
   completed: boolean;
 };
@@ -56,8 +65,6 @@ type LeaderboardProfile = {
   username: string;
   university: string;
   course: string;
-  avatar_url?: string | null;
-  display_name?: string | null;
 };
 
 type FriendConnection = {
@@ -90,32 +97,18 @@ type LeaderboardEntry = {
   username: string;
   university: string;
   course: string;
-  avatarUrl?: string | null;
-  displayName?: string | null;
   cookedScore: number;
   status: string;
   pendingTasks: number;
   completedTasks: number;
   completionRate: number;
   weeklyCookedChange: number;
+  weeklyPendingChange: number;
   streak: number;
   rank: number;
   isYou: boolean;
   momentumLabel: string;
   roastLabel: string;
-  lastUpdatedLabel: string;
-};
-
-type NormalizedStudyBlock = StudyBlock & {
-  completed?: boolean;
-  durationMinutes?: number;
-  duration_minutes?: number;
-  subject?: string;
-  focus?: string;
-  day?: string;
-  time?: string;
-  task_id?: string | null;
-  location?: string;
 };
 
 const STUDY_PLAN_STORAGE_KEY = "lockdin_study_plan";
@@ -123,8 +116,6 @@ const STUDY_PLAN_STORAGE_KEY = "lockdin_study_plan";
 function getDaysUntil(dateString: string) {
   const today = new Date();
   const due = new Date(dateString);
-
-  if (Number.isNaN(due.getTime())) return 999;
 
   today.setHours(0, 0, 0, 0);
   due.setHours(0, 0, 0, 0);
@@ -141,37 +132,6 @@ function safeParseArray<T>(value: string | null): T[] {
   } catch {
     return [];
   }
-}
-
-function normalizeStudyBlocks(raw: unknown[]): NormalizedStudyBlock[] {
-  return raw.map((item, index) => {
-    const block = (item ?? {}) as Record<string, unknown>;
-
-    const taskIdValue =
-      typeof block.taskId === "string"
-        ? block.taskId
-        : typeof block.task_id === "string"
-        ? block.task_id
-        : "";
-
-    const durationValue = Number(
-      block.duration_minutes ?? block.durationMinutes ?? 0
-    );
-
-    return {
-      id: String(block.id ?? `study-${index}`),
-      day: String(block.day ?? ""),
-      time: String(block.time ?? ""),
-      subject: String(block.subject ?? ""),
-      focus: String(block.focus ?? ""),
-      taskId: taskIdValue,
-      task_id: taskIdValue || null,
-      durationMinutes: durationValue,
-      duration_minutes: durationValue,
-      completed: Boolean(block.completed),
-      location: typeof block.location === "string" ? block.location : "",
-    };
-  });
 }
 
 function getDateDaysAgo(daysAgo: number) {
@@ -241,14 +201,6 @@ function getCookedZone(score: number) {
   if (score <= 60) return "Under Pressure";
   if (score <= 80) return "Cooked";
   return "Deep Fried";
-}
-
-function getCookedStatusFromScore(score: number) {
-  if (score <= 20) return "Locked in and under control";
-  if (score <= 40) return "Stable, but don’t coast";
-  if (score <= 60) return "Pressure is building";
-  if (score <= 80) return "You need to lock in";
-  return "Academic emergency";
 }
 
 function getRoastLabel(score: number) {
@@ -327,34 +279,6 @@ function getXpIntoCurrentLevel(xp: number) {
 
 function getXpNeededForNextLevel() {
   return 100;
-}
-
-function getDisplayName(entry: {
-  displayName?: string | null;
-  username: string;
-}) {
-  return entry.displayName || `@${entry.username}`;
-}
-
-function getInitials(value: string) {
-  const clean = value.replace("@", "").trim();
-  if (!clean) return "LD";
-
-  const parts = clean.split(" ").filter(Boolean);
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-
-  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
-}
-
-function getRelativeSyncLabel(date: string | null) {
-  if (!date) return "No sync yet";
-
-  const today = getTodayDate();
-  if (date === today) return "Updated today";
-  if (date === getDateDaysAgo(1)) return "Updated yesterday";
-  return `Updated ${date}`;
 }
 
 async function copyText(text: string) {
@@ -467,9 +391,9 @@ async function syncDailyProfileProgress(
 
 export default function HomePage() {
   const router = useRouter();
-  const { tasks: providerTasks, loading: loadingTasks } = useTasks();
+  const { tasks: providerTasks, loading } = useTasks();
 
-  const [studyBlocks, setStudyBlocks] = useState<NormalizedStudyBlock[]>([]);
+  const [studyBlocks, setStudyBlocks] = useState<StudyBlock[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [profile, setProfile] = useState<HomeProfile | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -486,18 +410,7 @@ export default function HomePage() {
 
   const [shareMessage, setShareMessage] = useState("");
 
-  const tasks = useMemo<HomeTask[]>(() => {
-    return ((providerTasks ?? []) as Array<Record<string, unknown>>).map((task) => ({
-      id: String(task.id ?? ""),
-      title: String(task.title ?? ""),
-      module: String(task.module ?? ""),
-      dueDate: String(task.dueDate ?? task.due_date ?? ""),
-      priority: (task.priority as Priority) ?? "Low",
-      completed: Boolean(task.completed),
-    }));
-  }, [providerTasks]);
-
-  async function loadLeaderboard(userId: string, liveTasks: HomeTask[] = tasks) {
+  async function loadLeaderboard(userId: string) {
     try {
       setLeaderboardLoading(true);
 
@@ -507,7 +420,10 @@ export default function HomePage() {
         .or(`user_id.eq.${userId},friend_id.eq.${userId}`);
 
       if (connectionError) {
-        console.error("Error loading friend connections:", connectionError.message);
+        console.error(
+          "Error loading friend connections:",
+          connectionError.message
+        );
         setLeaderboard([]);
         return;
       }
@@ -522,18 +438,29 @@ export default function HomePage() {
 
       const allIds = Array.from(new Set([userId, ...friendIds]));
 
-      console.log("Leaderboard userId:", userId);
-      console.log("Friend connection rows:", connectionRows);
-      console.log("Friend IDs:", friendIds);
-      console.log("All IDs:", allIds);
-
       const { data: profileRows, error: profileError } = await supabase
         .from("profiles")
-        .select("id, username, university, course, avatar_url, display_name")
+        .select("id, username, university, course")
         .in("id", allIds);
 
       if (profileError) {
-        console.error("Error loading leaderboard profiles:", profileError.message);
+        console.error(
+          "Error loading leaderboard profiles:",
+          profileError.message
+        );
+        setLeaderboard([]);
+        return;
+      }
+
+      const { data: taskRows, error: taskError } = await supabase
+        .from("tasks")
+        .select("id, user_id, title, module, due_date, priority, completed")
+        .in("user_id", allIds);
+
+      if (taskError) {
+        console.error("Error loading leaderboard tasks:", taskError.message);
+        setLeaderboard([]);
+        return;
       }
 
       const { data: snapshotRows, error: snapshotError } = await supabase
@@ -542,10 +469,15 @@ export default function HomePage() {
           "user_id, snapshot_date, cooked_score, pending_tasks, completed_tasks, completion_rate"
         )
         .in("user_id", allIds)
-        .gte("snapshot_date", getDateDaysAgo(14));
+        .gte("snapshot_date", getDateDaysAgo(7));
 
       if (snapshotError) {
-        console.error("Error loading leaderboard snapshots:", snapshotError.message);
+        console.error(
+          "Error loading leaderboard snapshots:",
+          snapshotError.message
+        );
+        setLeaderboard([]);
+        return;
       }
 
       const { data: activityRows, error: activityError } = await supabase
@@ -556,11 +488,25 @@ export default function HomePage() {
 
       if (activityError) {
         console.error("Error loading activity days:", activityError.message);
+        setLeaderboard([]);
+        return;
       }
 
-      console.log("Profile rows:", profileRows);
-      console.log("Snapshot rows:", snapshotRows);
-      console.log("Activity rows:", activityRows);
+      const tasksByUser = new Map<string, HomeTask[]>();
+      ((taskRows as DatabaseTask[] | null) ?? []).forEach((task) => {
+        const mapped: HomeTask = {
+          id: task.id,
+          title: task.title,
+          module: task.module,
+          dueDate: task.due_date,
+          priority: task.priority,
+          completed: task.completed,
+        };
+
+        const existing = tasksByUser.get(task.user_id) ?? [];
+        existing.push(mapped);
+        tasksByUser.set(task.user_id, existing);
+      });
 
       const snapshotsByUser = new Map<string, LeaderboardSnapshotRow[]>();
       ((snapshotRows as LeaderboardSnapshotRow[] | null) ?? []).forEach((row) => {
@@ -576,48 +522,30 @@ export default function HomePage() {
         activityByUser.set(row.user_id, existing);
       });
 
-      const myCookedResult = calculateCookedScore(liveTasks, []);
-      const myPendingTasks = liveTasks.filter((task) => !task.completed).length;
-      const myCompletedTasks = liveTasks.filter((task) => task.completed).length;
-      const myCompletionRate =
-        liveTasks.length > 0
-          ? Math.round((myCompletedTasks / liveTasks.length) * 100)
-          : 0;
-
       const entries: LeaderboardEntry[] = (
         (profileRows as LeaderboardProfile[] | null) ?? []
       ).map((person) => {
+        const personTasks = tasksByUser.get(person.id) ?? [];
+        const cookedResult = calculateCookedScore(personTasks, []);
+        const pendingTasks = personTasks.filter((task) => !task.completed).length;
+        const completedTasks = personTasks.filter((task) => task.completed).length;
+        const completionRate =
+          personTasks.length > 0
+            ? Math.round((completedTasks / personTasks.length) * 100)
+            : 0;
+
         const personSnapshots = (snapshotsByUser.get(person.id) ?? []).sort((a, b) =>
           a.snapshot_date.localeCompare(b.snapshot_date)
         );
 
-        const latestSnapshot =
-          personSnapshots.length > 0
-            ? personSnapshots[personSnapshots.length - 1]
-            : null;
-
         const oldestSnapshot = personSnapshots[0] ?? null;
 
-        const isYou = person.id === userId;
-
-        const cookedScore = isYou
-          ? myCookedResult.score
-          : latestSnapshot?.cooked_score ?? 0;
-
-        const pendingTasks = isYou
-          ? myPendingTasks
-          : latestSnapshot?.pending_tasks ?? 0;
-
-        const completedTasks = isYou
-          ? myCompletedTasks
-          : latestSnapshot?.completed_tasks ?? 0;
-
-        const completionRate = isYou
-          ? myCompletionRate
-          : latestSnapshot?.completion_rate ?? 0;
-
         const weeklyCookedChange = oldestSnapshot
-          ? cookedScore - oldestSnapshot.cooked_score
+          ? cookedResult.score - oldestSnapshot.cooked_score
+          : 0;
+
+        const weeklyPendingChange = oldestSnapshot
+          ? pendingTasks - oldestSnapshot.pending_tasks
           : 0;
 
         const streak = calculateStreak(activityByUser.get(person.id) ?? []);
@@ -627,28 +555,22 @@ export default function HomePage() {
           username: person.username,
           university: person.university,
           course: person.course,
-          avatarUrl: person.avatar_url ?? null,
-          displayName: person.display_name ?? null,
-          cookedScore,
-          status: getCookedStatusFromScore(cookedScore),
+          cookedScore: cookedResult.score,
+          status: cookedResult.status,
           pendingTasks,
           completedTasks,
           completionRate,
           weeklyCookedChange,
+          weeklyPendingChange,
           streak,
           rank: 0,
-          isYou,
+          isYou: person.id === userId,
           momentumLabel: getMomentumLabel(completionRate, pendingTasks),
-          roastLabel: getRoastLabel(cookedScore),
-          lastUpdatedLabel: isYou
-            ? "Live now"
-            : getRelativeSyncLabel(latestSnapshot?.snapshot_date ?? null),
+          roastLabel: getRoastLabel(cookedResult.score),
         };
       });
 
-      console.log("Final leaderboard entries:", entries);
-
-      setLeaderboard(entries.filter((entry) => entry.id && entry.username));
+      setLeaderboard(entries);
     } catch (error) {
       console.error("Unexpected leaderboard error:", error);
       setLeaderboard([]);
@@ -665,7 +587,7 @@ export default function HomePage() {
       return;
     }
 
-    const cleanUsername = friendUsername.trim().replace(/^@/, "").toLowerCase();
+    const cleanUsername = friendUsername.trim().replace(/^@/, "");
 
     if (!cleanUsername) {
       setFriendError("Enter a username first.");
@@ -677,21 +599,17 @@ export default function HomePage() {
       setFriendError("");
       setFriendSuccess("");
 
-      const { data: foundUsers, error: findError } = await supabase
+      const { data: foundUser, error: findError } = await supabase
         .from("profiles")
         .select("id, username")
-        .ilike("username", cleanUsername);
+        .ilike("username", cleanUsername)
+        .maybeSingle();
 
       if (findError) {
         console.error("Could not search for username:", findError);
         setFriendError(findError.message || "Could not search for that username.");
         return;
       }
-
-      const foundUser =
-        foundUsers?.find(
-          (user) => user.username?.toLowerCase() === cleanUsername
-        ) ?? null;
 
       if (!foundUser) {
         setFriendError("No user found with that username.");
@@ -703,12 +621,13 @@ export default function HomePage() {
         return;
       }
 
-      const { data: existingConnections, error: existingError } = await supabase
+      const { data: existingConnection, error: existingError } = await supabase
         .from("friend_connections")
         .select("user_id, friend_id")
         .or(
           `and(user_id.eq.${currentUserId},friend_id.eq.${foundUser.id}),and(user_id.eq.${foundUser.id},friend_id.eq.${currentUserId})`
-        );
+        )
+        .maybeSingle();
 
       if (existingError) {
         console.error("Could not check existing connections:", existingError);
@@ -718,7 +637,7 @@ export default function HomePage() {
         return;
       }
 
-      if ((existingConnections ?? []).length > 0) {
+      if (existingConnection) {
         setFriendError("That friend is already on your leaderboard.");
         return;
       }
@@ -738,7 +657,7 @@ export default function HomePage() {
 
       setFriendSuccess(`@${foundUser.username} added to your leaderboard.`);
       setFriendUsername("");
-      await loadLeaderboard(currentUserId, tasks);
+      await loadLeaderboard(currentUserId);
     } catch (error) {
       console.error("Unexpected add friend error:", error);
       setFriendError("Something went wrong while adding that friend.");
@@ -787,9 +706,7 @@ export default function HomePage() {
   async function handleShareLeaderboard(entries: LeaderboardEntry[]) {
     const lines = entries
       .slice(0, 5)
-      .map(
-        (entry, index) => `${index + 1}. @${entry.username} — ${entry.cookedScore}/100`
-      );
+      .map((entry, index) => `${index + 1}. @${entry.username} — ${entry.cookedScore}/100`);
 
     const text = `🔥 LockdIn Cooked Leaderboard\n${lines.join(
       "\n"
@@ -815,13 +732,9 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    const rawStudyPlan = safeParseArray<unknown>(
-      typeof window !== "undefined"
-        ? localStorage.getItem(STUDY_PLAN_STORAGE_KEY)
-        : null
+    setStudyBlocks(
+      safeParseArray<StudyBlock>(localStorage.getItem(STUDY_PLAN_STORAGE_KEY))
     );
-
-    setStudyBlocks(normalizeStudyBlocks(rawStudyPlan));
 
     let mounted = true;
 
@@ -874,7 +787,7 @@ export default function HomePage() {
       if (!mounted) return;
 
       setProfile(syncedProfile);
-      await loadLeaderboard(user.id, tasks);
+      await loadLeaderboard(user.id);
     }
 
     void checkAuthAndProfile();
@@ -901,11 +814,6 @@ export default function HomePage() {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         void checkAuthAndProfile();
-
-        const freshRawStudyPlan = safeParseArray<unknown>(
-          localStorage.getItem(STUDY_PLAN_STORAGE_KEY)
-        );
-        setStudyBlocks(normalizeStudyBlocks(freshRawStudyPlan));
       }
     };
 
@@ -918,19 +826,40 @@ export default function HomePage() {
     };
   }, [router]);
 
+  const tasks = useMemo<HomeTask[]>(() => {
+    return ((providerTasks ?? []) as any[]).map((task) => ({
+      id: task.id,
+      title: task.title,
+      module: task.module,
+      dueDate: task.dueDate ?? task.due_date ?? "",
+      priority: task.priority,
+      completed: task.completed,
+    }));
+  }, [providerTasks]);
+
   useEffect(() => {
     async function syncMySnapshot() {
-      if (!currentUserId || loadingTasks) return;
-      await upsertTodayLeaderboardSnapshotClient(currentUserId, tasks);
+      if (!currentUserId || loading) return;
+
+      const leaderboardTasks = tasks.map((task) => ({
+        id: task.id,
+        title: task.title,
+        module: task.module,
+        dueDate: task.dueDate,
+        priority: task.priority,
+        completed: task.completed,
+      }));
+
+      await upsertTodayLeaderboardSnapshotClient(currentUserId, leaderboardTasks);
     }
 
     void syncMySnapshot();
-  }, [currentUserId, tasks, loadingTasks]);
+  }, [currentUserId, tasks, loading]);
 
   useEffect(() => {
-    if (!currentUserId || loadingTasks) return;
-    void loadLeaderboard(currentUserId, tasks);
-  }, [currentUserId, tasks, loadingTasks]);
+    if (!currentUserId || loading) return;
+    void loadLeaderboard(currentUserId);
+  }, [currentUserId, tasks, loading]);
 
   const stats = useMemo(() => {
     const completed = tasks.filter((task) => task.completed).length;
@@ -971,12 +900,7 @@ export default function HomePage() {
 
     const studyHours =
       Math.round(
-        (studyBlocks.reduce(
-          (sum, block) =>
-            sum + Number(block.duration_minutes ?? block.durationMinutes ?? 0),
-          0
-        ) /
-          60) *
+        (studyBlocks.reduce((sum, block) => sum + block.durationMinutes, 0) / 60) *
           10
       ) / 10;
 
@@ -1005,11 +929,11 @@ export default function HomePage() {
   }, [tasks, studyBlocks]);
 
   const cooked = useMemo(() => {
-    return calculateCookedScore(tasks, studyBlocks as StudyBlock[]);
+    return calculateCookedScore(tasks, studyBlocks);
   }, [tasks, studyBlocks]);
 
   const bestRecoveryAction = useMemo(() => {
-    return getBestRecoveryAction(tasks, studyBlocks as StudyBlock[]);
+    return getBestRecoveryAction(tasks, studyBlocks);
   }, [tasks, studyBlocks]);
 
   const biggestThreat = useMemo(() => {
@@ -1051,10 +975,29 @@ export default function HomePage() {
       .slice(0, 3);
   }, [tasks]);
 
-  const todaysStudyBlocks = useMemo(() => {
-    const todayName = new Date().toLocaleDateString("en-GB", { weekday: "long" });
-    return studyBlocks.filter((block) => block.day === todayName);
-  }, [studyBlocks]);
+  const coachTitle =
+    stats.overdue > 0
+      ? "Clear overdue work before anything else"
+      : stats.highPriority > 0
+      ? "High-priority work needs your focus"
+      : stats.pending > 0
+      ? "Your edge comes from finishing, not adding more"
+      : "You’re in a strong position right now";
+
+  const coachMessage =
+    stats.overdue > 0
+      ? `You have ${stats.overdue} overdue task${
+          stats.overdue === 1 ? "" : "s"
+        }. That is the main thing dragging your score up right now.`
+      : stats.highPriority > 0
+      ? `You still have ${stats.highPriority} high-priority task${
+          stats.highPriority === 1 ? "" : "s"
+        } open. Finishing one of those will shift things fastest.`
+      : stats.pending > 0
+      ? `You have ${stats.pending} active task${
+          stats.pending === 1 ? "" : "s"
+        } in motion. Protect momentum by finishing what is already open.`
+      : "No current backlog. Best move now is staying ahead before pressure builds again.";
 
   const sortedLeaderboard = useMemo(() => {
     const cloned = [...leaderboard];
@@ -1091,8 +1034,8 @@ export default function HomePage() {
 
     return cloned
       .sort((a, b) => {
-        if (b.streak !== a.streak) return b.streak - a.streak;
-        return b.completedTasks - a.completedTasks;
+        if (b.pendingTasks !== a.pendingTasks) return b.pendingTasks - a.pendingTasks;
+        return b.cookedScore - a.cookedScore;
       })
       .map((entry, index) => ({ ...entry, rank: index + 1 }));
   }, [leaderboard, leaderboardMode]);
@@ -1114,1131 +1057,933 @@ export default function HomePage() {
     if (leaderboardMode === "mostLockedIn") {
       return `@${top.username} is currently the least cooked.`;
     }
-    return `@${top.username} is the most active right now.`;
+    return `@${top.username} is carrying the heaviest active workload.`;
   }, [sortedLeaderboard, leaderboardMode]);
 
   const yourRank = useMemo(() => {
     return sortedLeaderboard.find((entry) => entry.isYou)?.rank ?? null;
   }, [sortedLeaderboard]);
 
-  const coachTitle =
-    stats.overdue > 0
-      ? "Clear overdue work before anything else"
-      : stats.highPriority > 0
-      ? "High-priority work needs your focus"
-      : stats.pending > 0
-      ? "Your edge comes from finishing, not adding more"
-      : "You’re in a strong position right now";
-
-  const coachMessage =
-    stats.overdue > 0
-      ? `You have ${stats.overdue} overdue task${
-          stats.overdue === 1 ? "" : "s"
-        }. That is the main thing dragging your score up right now.`
-      : stats.highPriority > 0
-      ? `You still have ${stats.highPriority} high-priority task${
-          stats.highPriority === 1 ? "" : "s"
-        } open. Finishing one of those will shift things fastest.`
-      : stats.pending > 0
-      ? `You have ${stats.pending} active task${
-          stats.pending === 1 ? "" : "s"
-        } in motion. Protect momentum by finishing what is already open.`
-      : "No current backlog. Best move now is staying ahead before pressure builds again.";
-
-  const displayXp = profile?.xp ?? 0;
-  const displayLevel = profile?.level ?? 1;
-  const displayStreak = profile?.streak ?? 0;
-  const displayBestStreak = profile?.best_streak ?? 0;
-
-  const profileLevel = displayLevel || getLevelFromXp(displayXp);
-  const xpIntoLevel = getXpIntoCurrentLevel(displayXp);
+  const profileLevel = profile?.level ?? getLevelFromXp(profile?.xp ?? 0);
+  const xpIntoLevel = getXpIntoCurrentLevel(profile?.xp ?? 0);
   const xpNeededForNextLevel = getXpNeededForNextLevel();
   const levelProgress = Math.min((xpIntoLevel / xpNeededForNextLevel) * 100, 100);
 
-  const isLoadingPage = loadingTasks || leaderboardLoading;
-
   return (
-    <AppShell>
-      <main className="min-h-screen overflow-x-hidden bg-[#020817] text-white">
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.16),transparent_28%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.10),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(244,63,94,0.08),transparent_24%)]" />
+    <main className="min-h-screen overflow-x-hidden bg-[#020817] text-white">
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.16),transparent_28%),radial-gradient(circle_at_top_right,rgba(168,85,247,0.10),transparent_20%),radial-gradient(circle_at_bottom_right,rgba(244,63,94,0.08),transparent_24%)]" />
 
-        <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
-          <div className="space-y-6 sm:space-y-8">
-            <section className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,#08122b_0%,#061021_100%)] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:p-8 md:p-10">
-              <div className="grid gap-8 xl:grid-cols-[1.08fr_0.92fr] xl:items-center">
-                <div className="max-w-3xl">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="inline-flex w-fit items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-300 sm:text-sm">
-                      <Sparkles className="h-4 w-4 text-blue-300" />
-                      Built for students who need to lock in
-                    </div>
-
-                    {isLoggedIn && profile ? (
-                      <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500 text-sm font-semibold text-white">
-                          {profile.username?.[0]?.toUpperCase() || "L"}
-                        </div>
-                        <div className="text-left">
-                          <p className="text-sm font-semibold text-white">
-                            @{profile.username}
-                          </p>
-                          <p className="text-xs text-slate-400">
-                            {profile.course} • {profile.university}
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <Link
-                        href="/login"
-                        className="inline-flex w-full items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium text-white transition hover:bg-white/10 sm:w-auto"
-                      >
-                        Log in
-                      </Link>
-                    )}
+      <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
+        <div className="space-y-6 sm:space-y-8">
+          <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,#08122b_0%,#061021_100%)] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:p-8 md:p-10">
+            <div className="grid gap-8 xl:grid-cols-[1.1fr_0.9fr] xl:items-center">
+              <div className="max-w-3xl">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="inline-flex w-fit items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-slate-300 sm:text-sm">
+                    <Sparkles className="h-4 w-4 text-blue-300" />
+                    Built for students who need to lock in
                   </div>
 
-                  <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-5xl xl:text-6xl">
-                    Don’t get cooked this semester.
-                  </h1>
-
-                  <p className="mt-4 max-w-2xl text-base leading-8 text-slate-300 sm:text-lg">
-                    LockdIn keeps your workload, study plan, cooked score, and friend
-                    pressure in one place so you always know what matters next.
-                  </p>
-
-                  <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-2xl border border-orange-400/20 bg-orange-500/10 px-4 py-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-orange-200/70">
-                        Daily Streak
-                      </p>
-                      <div className="mt-2 flex items-center gap-2">
-                        <Flame className="h-5 w-5 text-orange-300" />
-                        <p className="text-2xl font-semibold text-white">
-                          {displayStreak}
+                  {isLoggedIn && profile ? (
+                    <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500 text-sm font-semibold text-white">
+                        {profile.username?.[0]?.toUpperCase()}
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-semibold text-white">
+                          @{profile.username}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {profile.course} • {profile.university}
                         </p>
                       </div>
-                      <p className="mt-2 text-xs text-orange-200/70">
-                        Best: {displayBestStreak} days
-                      </p>
                     </div>
-
-                    <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/70">
-                        Level
-                      </p>
-                      <div className="mt-2 flex items-center gap-2">
-                        <Trophy className="h-5 w-5 text-cyan-300" />
-                        <p className="text-2xl font-semibold text-white">
-                          {profileLevel}
-                        </p>
-                      </div>
-                      <p className="mt-2 text-xs text-cyan-200/70">
-                        {displayXp} total XP
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                        Due This Week
-                      </p>
-                      <p className="mt-2 text-2xl font-semibold text-white">
-                        {loadingTasks ? "..." : stats.dueThisWeek}
-                      </p>
-                      <p className="mt-2 text-xs text-slate-500">
-                        {loadingTasks ? "..." : `${stats.pending} active tasks`}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                  ) : (
                     <Link
-                      href="/tasks"
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-500 px-6 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
+                      href="/login"
+                      className="inline-flex w-full items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium text-white transition hover:bg-white/10 sm:w-auto"
                     >
-                      <ClipboardList className="h-4 w-4" />
-                      Open Tasks
+                      Log in
                     </Link>
-                    <Link
-                      href="/planner"
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-medium text-white transition hover:bg-white/10"
-                    >
-                      <CalendarDays className="h-4 w-4" />
-                      Open Planner
-                    </Link>
-                    <Link
-                      href="/badges"
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-6 py-3 text-sm font-medium text-amber-200 transition hover:border-amber-400 hover:bg-amber-500/20"
-                    >
-                      <Medal className="h-4 w-4" />
-                      Badges
-                    </Link>
-                    <Link
-                      href="/degree-tracker"
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-400/20 bg-blue-500/10 px-6 py-3 text-sm font-medium text-blue-200 transition hover:border-blue-400 hover:bg-blue-500/20"
-                    >
-                      <TrendingUp className="h-4 w-4" />
-                      Degree Tracker
-                    </Link>
-                  </div>
-
-                  {shareMessage ? (
-                    <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
-                      {shareMessage}
-                    </div>
-                  ) : null}
+                  )}
                 </div>
 
-                <div
-                  className={`relative rounded-[32px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl sm:p-6 ${getCookedGlowClass(
-                    cooked.score
-                  )}`}
-                >
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.14),transparent_45%)]" />
-                  <div className="relative">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                          Live Cooked Score
-                        </p>
-                        <div className="mt-4 flex items-end gap-3">
-                          <span
-                            className={`text-6xl font-semibold sm:text-7xl ${getCookedTextColor(
-                              cooked.score
-                            )}`}
-                          >
-                            {loadingTasks ? "..." : cooked.score}
-                          </span>
-                          <span className="pb-2 text-2xl text-slate-500">/100</span>
-                        </div>
-                        <p className="mt-2 text-base font-medium text-white">
-                          {loadingTasks ? "Loading..." : getCookedZone(cooked.score)}
-                        </p>
-                        <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">
-                          {loadingTasks ? "..." : getRoastLabel(cooked.score)}
-                        </p>
-                      </div>
+                <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-5xl xl:text-6xl">
+                  Your academic command centre.
+                </h1>
 
-                      <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-right">
-                        <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
-                          Status
-                        </p>
-                        <p className="mt-1 text-sm font-semibold text-white">
-                          {loadingTasks ? "Loading..." : cooked.status}
-                        </p>
-                      </div>
-                    </div>
+                <p className="mt-4 max-w-2xl text-base leading-8 text-slate-300 sm:text-lg">
+                  Deadlines, focus, momentum, and social pressure — all in one
+                  place, so you always know what matters next.
+                </p>
 
-                    <div className="mt-6 h-3 w-full overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${getCookedBarClass(
-                          cooked.score
-                        )}`}
-                        style={{
-                          width: `${Math.max(8, loadingTasks ? 8 : cooked.score)}%`,
-                        }}
-                      />
-                    </div>
-
-                    <p className="mt-4 text-sm leading-7 text-slate-300">
-                      {loadingTasks ? "Loading your dashboard..." : getHeroSubtitle(cooked.score)}
+                <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-orange-400/20 bg-orange-500/10 px-4 py-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-orange-200/70">
+                      Daily Streak
                     </p>
-
-                    <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                            Level Progress
-                          </p>
-                          <p className="mt-2 text-lg font-semibold text-white">
-                            Level {profileLevel}
-                          </p>
-                        </div>
-                        <p className="text-sm text-slate-400">
-                          {xpIntoLevel}/{xpNeededForNextLevel} XP
-                        </p>
-                      </div>
-
-                      <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-white/10">
-                        <div
-                          className="h-full rounded-full bg-white transition-all duration-500"
-                          style={{ width: `${Math.max(6, levelProgress)}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                      <button
-                        type="button"
-                        onClick={() => handleShareScore(cooked.score)}
-                        className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
-                      >
-                        Share my score
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleCopyInvite}
-                        className="rounded-2xl border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-sm font-medium text-blue-200 transition hover:border-blue-400 hover:bg-blue-500/20"
-                      >
-                        Copy invite link
-                      </button>
-                    </div>
-
-                    <div className="mt-6 rounded-[22px] border border-white/10 bg-white p-4">
-                      <Image
-                        src="/logo.png"
-                        alt="LockdIn logo"
-                        width={260}
-                        height={260}
-                        className="mx-auto h-auto w-[150px] object-contain sm:w-[185px]"
-                        priority
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-[24px] border border-orange-400/20 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
-                <div className="flex items-center gap-2 text-sm text-orange-300">
-                  <Flame className="h-4 w-4" />
-                  Streak
-                </div>
-                <p className="mt-4 text-4xl font-semibold text-white">
-                  {displayStreak}
-                </p>
-                <p className="mt-2 text-sm text-slate-400">
-                  Best streak: {displayBestStreak} days
-                </p>
-              </div>
-
-              <div className="rounded-[24px] border border-cyan-400/20 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
-                <div className="flex items-center gap-2 text-sm text-cyan-300">
-                  <Trophy className="h-4 w-4" />
-                  XP & Level
-                </div>
-                <p className="mt-4 text-4xl font-semibold text-white">{profileLevel}</p>
-                <p className="mt-2 text-sm text-slate-400">{displayXp} XP total</p>
-              </div>
-
-              <div className="rounded-[24px] border border-emerald-400/20 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
-                <div className="flex items-center gap-2 text-sm text-emerald-300">
-                  <Shield className="h-4 w-4" />
-                  Completion
-                </div>
-                <p className="mt-4 text-4xl font-semibold text-white">
-                  {loadingTasks ? "..." : `${stats.completionRate}%`}
-                </p>
-                <p className="mt-2 text-sm text-slate-400">
-                  {loadingTasks ? "..." : `${stats.completed} completed tasks`}
-                </p>
-              </div>
-
-              <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
-                <div className="flex items-center gap-2 text-sm text-slate-300">
-                  <CalendarDays className="h-4 w-4" />
-                  Study Plan
-                </div>
-                <p className="mt-4 text-4xl font-semibold text-white">
-                  {loadingTasks ? "..." : stats.studyHours}
-                </p>
-                <p className="mt-2 text-sm text-slate-400">
-                  {loadingTasks ? "..." : `${stats.completedStudyBlocks} blocks done`}
-                </p>
-              </div>
-            </section>
-
-            <section className="grid gap-6 xl:grid-cols-[1.16fr_0.84fr]">
-              <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <div className="inline-flex items-center gap-2 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-400/20">
-                      <Trophy className="h-3.5 w-3.5" />
-                      Social Pressure
-                    </div>
-                    <h2 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
-                      🔥 Cooked Leaderboard
-                    </h2>
-                    <p className="mt-2 text-sm text-slate-400">
-                      {leaderboardHeadline}
-                    </p>
-                    {yourRank ? (
-                      <p className="mt-2 text-xs text-slate-500">
-                        Your current rank: #{yourRank}
+                    <div className="mt-2 flex items-center gap-2">
+                      <Flame className="h-5 w-5 text-orange-300" />
+                      <p className="text-2xl font-semibold text-white">
+                        {profile ? profile.streak : 0}
                       </p>
-                    ) : null}
+                    </div>
+                    <p className="mt-2 text-xs text-orange-200/70">
+                      Best: {profile ? profile.best_streak : 0} days
+                    </p>
                   </div>
 
-                  {isLoggedIn ? (
-                    <button
-                      type="button"
-                      onClick={() => handleShareLeaderboard(sortedLeaderboard)}
-                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
-                    >
-                      Share leaderboard
-                    </button>
-                  ) : null}
+                  <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/70">
+                      Level
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Trophy className="h-5 w-5 text-cyan-300" />
+                      <p className="text-2xl font-semibold text-white">
+                        {profileLevel}
+                      </p>
+                    </div>
+                    <p className="mt-2 text-xs text-cyan-200/70">
+                      {profile?.xp ?? 0} total XP
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                      Due This Week
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-white">
+                      {loading ? "..." : stats.dueThisWeek}
+                    </p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      {loading ? "..." : `${stats.pending} active tasks`}
+                    </p>
+                  </div>
                 </div>
 
-                {isLoggedIn ? (
-                  <>
-                    <form
-                      onSubmit={handleAddFriend}
-                      className="mt-6 grid gap-3 md:grid-cols-[1fr_auto]"
-                    >
-                      <input
-                        type="text"
-                        value={friendUsername}
-                        onChange={(e) => setFriendUsername(e.target.value)}
-                        placeholder="Add friend by username"
-                        className="rounded-2xl border border-white/10 bg-[#101b38] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
-                      />
+                <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                  <Link
+                    href="/tasks"
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-500 px-6 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
+                  >
+                    <ClipboardList className="h-4 w-4" />
+                    Open Tasks
+                  </Link>
+                  <Link
+                    href="/planner"
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                  >
+                    <CalendarDays className="h-4 w-4" />
+                    Open Planner
+                  </Link>
+                  <Link
+                    href="/analytics"
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-6 py-3 text-sm font-medium text-cyan-200 transition hover:border-cyan-400 hover:bg-cyan-500/20"
+                  >
+                    <TrendingUp className="h-4 w-4" />
+                    Analytics
+                  </Link>
+                  <Link
+                    href="/badges"
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-6 py-3 text-sm font-medium text-amber-200 transition hover:border-amber-400 hover:bg-amber-500/20"
+                  >
+                    <Medal className="h-4 w-4" />
+                    Badges
+                  </Link>
+                  <Link
+                    href="/degree-tracker"
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-400/20 bg-blue-500/10 px-6 py-3 text-sm font-medium text-blue-200 transition hover:border-blue-400 hover:bg-blue-500/20"
+                  >
+                    <BarChart3 className="h-4 w-4" />
+                    Degree Tracker
+                  </Link>
+                </div>
 
-                      <button
-                        type="submit"
-                        disabled={addingFriend}
-                        className="rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {addingFriend ? "Adding..." : "Add friend"}
-                      </button>
-                    </form>
-
-                    <p className="mt-3 text-xs text-slate-500">
-                      Friend scores show from their latest saved LockdIn sync.
-                    </p>
-
-                    {friendError ? (
-                      <p className="mt-3 text-sm text-rose-300">{friendError}</p>
-                    ) : null}
-
-                    {friendSuccess ? (
-                      <p className="mt-3 text-sm text-emerald-300">{friendSuccess}</p>
-                    ) : null}
-
-                    <div className="mt-6 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setLeaderboardMode("mostCooked")}
-                        className={`rounded-full px-4 py-2 text-sm transition ${
-                          leaderboardMode === "mostCooked"
-                            ? "bg-rose-500/15 text-rose-300 ring-1 ring-rose-400/20"
-                            : "bg-white/5 text-slate-300 hover:bg-white/10"
-                        }`}
-                      >
-                        Most Cooked
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setLeaderboardMode("biggestComeback")}
-                        className={`rounded-full px-4 py-2 text-sm transition ${
-                          leaderboardMode === "biggestComeback"
-                            ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/20"
-                            : "bg-white/5 text-slate-300 hover:bg-white/10"
-                        }`}
-                      >
-                        Biggest Comeback
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setLeaderboardMode("mostLockedIn")}
-                        className={`rounded-full px-4 py-2 text-sm transition ${
-                          leaderboardMode === "mostLockedIn"
-                            ? "bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/20"
-                            : "bg-white/5 text-slate-300 hover:bg-white/10"
-                        }`}
-                      >
-                        Most Locked In
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setLeaderboardMode("mostActive")}
-                        className={`rounded-full px-4 py-2 text-sm transition ${
-                          leaderboardMode === "mostActive"
-                            ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/20"
-                            : "bg-white/5 text-slate-300 hover:bg-white/10"
-                        }`}
-                      >
-                        Most Active
-                      </button>
-                    </div>
-
-                    <div className="mt-6 space-y-4">
-                      {leaderboardLoading ? (
-                        <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                          Loading leaderboard...
-                        </div>
-                      ) : sortedLeaderboard.length === 0 ? (
-                        <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                          No one on the leaderboard yet. Add a friend by username to
-                          start the chaos.
-                        </div>
-                      ) : (
-                        sortedLeaderboard.slice(0, 5).map((entry, index) => (
-                          <div
-                            key={entry.id}
-                            className={`rounded-2xl border p-4 sm:p-5 ${getLeaderboardAccent(
-                              entry.cookedScore
-                            )} ${entry.isYou ? "ring-1 ring-blue-400/30" : ""}`}
-                          >
-                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                    #{entry.rank}
-                                  </span>
-
-                                  {index === 0 ? (
-                                    <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1 text-xs text-amber-300">
-                                      <span className="inline-flex items-center gap-1">
-                                        <Crown className="h-3 w-3" />
-                                        Top
-                                      </span>
-                                    </span>
-                                  ) : null}
-
-                                  <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/10 text-[10px] font-semibold text-white">
-                                    {entry.avatarUrl ? (
-                                      <Image
-                                        src={entry.avatarUrl}
-                                        alt={entry.username}
-                                        width={32}
-                                        height={32}
-                                        className="h-8 w-8 object-cover"
-                                      />
-                                    ) : (
-                                      <span>{getInitials(getDisplayName(entry))}</span>
-                                    )}
-                                  </div>
-
-                                  <p className="break-words text-base font-semibold text-white">
-                                    @{entry.username}
-                                  </p>
-
-                                  {entry.isYou ? (
-                                    <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs text-blue-200">
-                                      You
-                                    </span>
-                                  ) : null}
-
-                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                    {entry.roastLabel}
-                                  </span>
-                                </div>
-
-                                <p className="mt-2 text-sm text-slate-400">
-                                  {entry.course} • {entry.university}
-                                </p>
-
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                    {entry.pendingTasks} active task
-                                    {entry.pendingTasks === 1 ? "" : "s"}
-                                  </span>
-                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                    {entry.completionRate}% completion
-                                  </span>
-                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                    {entry.streak} day streak
-                                  </span>
-                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                    {entry.momentumLabel}
-                                  </span>
-                                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                                    {entry.lastUpdatedLabel}
-                                  </span>
-                                  <span
-                                    className={`rounded-full border px-3 py-1 text-xs ${
-                                      entry.weeklyCookedChange < 0
-                                        ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
-                                        : entry.weeklyCookedChange > 0
-                                        ? "border-rose-400/20 bg-rose-500/10 text-rose-300"
-                                        : "border-white/10 bg-white/5 text-slate-300"
-                                    }`}
-                                  >
-                                    7d cooked: {entry.weeklyCookedChange > 0 ? "+" : ""}
-                                    {entry.weeklyCookedChange}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="text-left sm:text-right">
-                                <p
-                                  className={`text-3xl font-semibold sm:text-4xl ${getCookedTextColor(
-                                    entry.cookedScore
-                                  )}`}
-                                >
-                                  {entry.cookedScore}
-                                </p>
-                                <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
-                                  cooked score
-                                </p>
-                                <p className="mt-2 text-sm text-slate-300">
-                                  {entry.status}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-black/20">
-                              <div
-                                className={`h-full rounded-full ${getCookedBarClass(
-                                  entry.cookedScore
-                                )}`}
-                                style={{
-                                  width: `${Math.max(6, entry.cookedScore)}%`,
-                                }}
-                              />
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="mt-6 rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                    Log in to start a cooked leaderboard with your friends.
+                {shareMessage ? (
+                  <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+                    {shareMessage}
                   </div>
-                )}
+                ) : null}
               </div>
 
-              <div className="space-y-6">
-                <div
-                  className={`rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6 ${getCookedGlowClass(
-                    cooked.score
-                  )}`}
-                >
-                  <div className="flex items-center gap-2 text-sm text-slate-400">
-                    <Flame className="h-4 w-4 text-orange-300" />
-                    Score Breakdown
+              <div
+                className={`relative rounded-[28px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl sm:p-6 ${getCookedGlowClass(
+                  cooked.score
+                )}`}
+              >
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.14),transparent_45%)]" />
+                <div className="relative">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                        Live Cooked Score
+                      </p>
+                      <div className="mt-4 flex items-end gap-3">
+                        <span
+                          className={`text-6xl font-semibold sm:text-7xl ${getCookedTextColor(
+                            cooked.score
+                          )}`}
+                        >
+                          {loading ? "..." : cooked.score}
+                        </span>
+                        <span className="pb-2 text-2xl text-slate-500">/100</span>
+                      </div>
+                      <p className="mt-2 text-base font-medium text-white">
+                        {loading ? "Loading..." : getCookedZone(cooked.score)}
+                      </p>
+                      <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">
+                        {loading ? "..." : getRoastLabel(cooked.score)}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-right">
+                      <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                        Status
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-white">
+                        {loading ? "Loading..." : cooked.status}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="mt-4 flex items-end gap-3">
-                    <span
-                      className={`text-5xl font-semibold ${getCookedTextColor(
-                        cooked.score
-                      )}`}
-                    >
-                      {loadingTasks ? "..." : cooked.score}
-                    </span>
-                    <span className="pb-2 text-xl text-slate-500">/100</span>
-                  </div>
-
-                  <p className="mt-2 text-base font-medium text-white">
-                    {loadingTasks ? "Loading..." : cooked.status}
-                  </p>
-
-                  <p className="mt-2 text-sm text-slate-400">
-                    {loadingTasks
-                      ? "Loading your score..."
-                      : getMotivationLine(cooked.score, stats.pending, stats.overdue)}
-                  </p>
-
-                  <div className="mt-5 h-3 w-full overflow-hidden rounded-full bg-white/10">
+                  <div className="mt-6 h-3 w-full overflow-hidden rounded-full bg-white/10">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${getCookedBarClass(
                         cooked.score
                       )}`}
                       style={{
-                        width: `${Math.max(6, loadingTasks ? 6 : cooked.score)}%`,
+                        width: `${Math.max(8, loading ? 8 : cooked.score)}%`,
                       }}
                     />
                   </div>
 
-                  <ul className="mt-5 space-y-3">
-                    {(loadingTasks ? ["Loading your risk factors..."] : cooked.reasons).map(
-                      (reason) => (
-                        <li
-                          key={reason}
-                          className="flex items-start gap-3 text-sm text-slate-200"
-                        >
-                          <span className="mt-2 h-2 w-2 rounded-full bg-blue-400" />
-                          <span>{reason}</span>
-                        </li>
-                      )
-                    )}
-                  </ul>
-
-                  <div className="mt-6">
-                    {bestRecoveryAction ? (
-                      <Link
-                        href={bestRecoveryAction.route}
-                        className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
-                      >
-                        <Zap className="h-4 w-4" />
-                        Reduce My Score
-                      </Link>
-                    ) : (
-                      <Link
-                        href="/tasks"
-                        className="inline-flex w-full items-center justify-center rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
-                      >
-                        Add a Task
-                      </Link>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-blue-500/15 px-3 py-1 text-xs font-medium text-blue-300 ring-1 ring-blue-400/20">
-                    <Target className="h-3.5 w-3.5" />
-                    AI Coach
-                  </div>
-
-                  <h2 className="mt-4 text-2xl font-semibold tracking-tight">
-                    {loadingTasks ? "Loading..." : coachTitle}
-                  </h2>
-
                   <p className="mt-4 text-sm leading-7 text-slate-300">
-                    {loadingTasks ? "Syncing your coach view..." : coachMessage}
+                    {loading ? "Loading your dashboard..." : getHeroSubtitle(cooked.score)}
                   </p>
 
-                  <div className="mt-5 rounded-2xl border border-white/10 bg-[#101b38] p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                      Recommended next step
-                    </p>
-                    <p className="mt-3 text-sm leading-7 text-white">
-                      {loadingTasks
-                        ? "Loading recommendation..."
-                        : stats.overdue > 0
-                        ? "Open Tasks and complete the most overdue item first."
-                        : stats.highPriority > 0
-                        ? "Finish your next high-priority task before switching context."
-                        : stats.pending > 0
-                        ? "Use Planner to assign focused time to your remaining workload."
-                        : "Use Planner to map out your next study block while you’re ahead."}
-                    </p>
-                  </div>
-
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                    <Link
-                      href="/tasks"
-                      className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
-                    >
-                      Open Tasks
-                    </Link>
-                    <Link
-                      href="/planner"
-                      className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
-                    >
-                      Build study plan
-                    </Link>
-                  </div>
-                </div>
-
-                <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#0f172a_0%,#111827_55%,#1f2937_100%)] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10">
-                        <Share2 className="h-3.5 w-3.5" />
-                        Shareable Moment
-                      </div>
-                      <h3 className="mt-4 text-2xl font-semibold text-white">
-                        Your latest flex
-                      </h3>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-white">
-                      <Trophy className="h-5 w-5" />
-                    </div>
-                  </div>
-
-                  <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-5">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                      Current snapshot
-                    </p>
-                    <h4 className="mt-2 text-2xl font-semibold text-white">
-                      {getRoastLabel(cooked.score)}
-                    </h4>
-                    <p className="mt-2 text-sm text-slate-300">
-                      You’re on {cooked.score}/100 with {stats.pending} active tasks and a{" "}
-                      {displayStreak}-day streak.
-                    </p>
-
-                    <div className="mt-5 grid grid-cols-3 gap-3">
-                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                  <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                          Score
+                          Level Progress
                         </p>
-                        <p className="mt-2 text-xl font-semibold text-white">
-                          {cooked.score}
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                          XP
-                        </p>
-                        <p className="mt-2 text-xl font-semibold text-white">
-                          {displayXp}
+                        <p className="mt-2 text-lg font-semibold text-white">
+                          Level {profileLevel}
                         </p>
                       </div>
-                      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                          Streak
-                        </p>
-                        <p className="mt-2 text-xl font-semibold text-white">
-                          {displayStreak}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-              <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
-                <div className="flex items-center justify-between gap-4">
-                  <h3 className="text-xl font-semibold sm:text-2xl">Biggest Threat</h3>
-                  <Link
-                    href="/performance"
-                    className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
-                  >
-                    Open dashboard
-                  </Link>
-                </div>
-
-                {loadingTasks ? (
-                  <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 text-slate-300 sm:p-6">
-                    Loading your biggest threat...
-                  </div>
-                ) : biggestThreat ? (
-                  <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 sm:p-6">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <p className="break-words text-lg font-semibold">
-                          {biggestThreat.title}
-                        </p>
-                        <p className="mt-2 text-sm text-slate-400">
-                          {biggestThreat.module}
-                        </p>
-                      </div>
-                      <span
-                        className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
-                          biggestThreat.priority
-                        )}`}
-                      >
-                        {biggestThreat.priority}
-                      </span>
-                    </div>
-
-                    <p className="mt-5 text-sm text-slate-300">
-                      Due {biggestThreat.dueDate}
-                    </p>
-
-                    <p className="mt-2 text-sm text-slate-400">
-                      {getUpcomingLabel(getDaysUntil(biggestThreat.dueDate))}
-                    </p>
-
-                    <Link
-                      href="/tasks"
-                      className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
-                    >
-                      Go to tasks
-                      <ChevronRight className="h-4 w-4" />
-                    </Link>
-                  </div>
-                ) : (
-                  <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 text-slate-300 sm:p-6">
-                    No immediate threats right now. That is a very nice position to be in.
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
-                <div className="flex items-center justify-between gap-4">
-                  <h3 className="text-xl font-semibold sm:text-2xl">Today’s Focus</h3>
-                  <Link
-                    href="/tasks"
-                    className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
-                  >
-                    Manage tasks
-                  </Link>
-                </div>
-
-                <div className="mt-6 space-y-4">
-                  {loadingTasks ? (
-                    <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                      Loading focus tasks...
-                    </div>
-                  ) : todayFocus.length === 0 ? (
-                    <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                      No active tasks right now. That board is looking clean.
-                    </div>
-                  ) : (
-                    todayFocus.map((task, index) => (
-                      <div
-                        key={task.id}
-                        className="rounded-2xl border border-white/10 bg-[#101b38] p-4 sm:p-5"
-                      >
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0">
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                              Focus {index + 1}
-                            </p>
-                            <p className="mt-2 break-words text-base font-medium text-white">
-                              {task.title}
-                            </p>
-                            <p className="mt-2 text-sm text-slate-400">{task.module}</p>
-                            <p className="mt-2 text-sm text-slate-500">
-                              {getUpcomingLabel(getDaysUntil(task.dueDate))}
-                            </p>
-                          </div>
-
-                          <span
-                            className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
-                              task.priority
-                            )}`}
-                          >
-                            {task.priority}
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </section>
-
-            <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-              <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
-                <div className="flex items-center justify-between gap-4">
-                  <h3 className="text-xl font-semibold sm:text-2xl">Recent Tasks</h3>
-                  <Link
-                    href="/tasks"
-                    className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
-                  >
-                    View all
-                  </Link>
-                </div>
-
-                <div className="mt-6 space-y-4">
-                  {loadingTasks ? (
-                    <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                      Loading recent tasks...
-                    </div>
-                  ) : stats.recent.length === 0 ? (
-                    <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                      No tasks yet. Add your first task to get started.
-                    </div>
-                  ) : (
-                    stats.recent.map((task) => (
-                      <div
-                        key={task.id}
-                        className="rounded-2xl border border-white/10 bg-[#101b38] p-4 sm:p-5"
-                      >
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0">
-                            <p
-                              className={`break-words text-base font-medium ${
-                                task.completed ? "text-slate-500 line-through" : "text-white"
-                              }`}
-                            >
-                              {task.title}
-                            </p>
-                            <p className="mt-2 text-sm text-slate-400">{task.module}</p>
-                            <p className="mt-2 text-sm text-slate-500">
-                              Due: {task.dueDate}
-                            </p>
-                          </div>
-
-                          <span
-                            className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
-                              task.priority
-                            )}`}
-                          >
-                            {task.priority}
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
-                <div className="flex items-center justify-between gap-4">
-                  <h3 className="text-xl font-semibold sm:text-2xl">Quick Access</h3>
-                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
-                    Move faster
-                  </div>
-                </div>
-
-                <div className="mt-6 grid gap-4 md:grid-cols-2">
-                  <Link
-                    href="/tasks"
-                    className="rounded-2xl border border-white/10 bg-[#101b38] p-5 transition hover:border-blue-400 hover:bg-[#122145]"
-                  >
-                    <p className="text-lg font-medium">Tasks</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-400">
-                      Add work, manage deadlines, and update progress.
-                    </p>
-                  </Link>
-
-                  <Link
-                    href="/planner"
-                    className="rounded-2xl border border-white/10 bg-[#101b38] p-5 transition hover:border-blue-400 hover:bg-[#122145]"
-                  >
-                    <p className="text-lg font-medium">Planner</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-400">
-                      Turn your workload into realistic study blocks.
-                    </p>
-                  </Link>
-
-                  <Link
-                    href="/performance"
-                    className="rounded-2xl border border-white/10 bg-[#101b38] p-5 transition hover:border-blue-400 hover:bg-[#122145]"
-                  >
-                    <p className="text-lg font-medium">Performance</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-400">
-                      Track pressure, momentum, and what to fix next.
-                    </p>
-                  </Link>
-
-                  <Link
-                    href="/badges"
-                    className="rounded-2xl border border-amber-400/20 bg-[linear-gradient(135deg,rgba(251,191,36,0.18),rgba(15,23,42,0.95))] p-5 transition hover:border-amber-400 hover:bg-[linear-gradient(135deg,rgba(251,191,36,0.24),rgba(15,23,42,1))]"
-                  >
-                    <p className="text-lg font-medium text-white">Badges</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-300">
-                      Track your milestones, streaks, and progress achievements.
-                    </p>
-                  </Link>
-
-                  <Link
-                    href="/degree-tracker"
-                    className="group relative overflow-hidden rounded-2xl border border-blue-400/20 bg-[linear-gradient(135deg,rgba(59,130,246,0.18),rgba(15,23,42,0.95))] p-5 transition hover:border-blue-400 hover:bg-[linear-gradient(135deg,rgba(59,130,246,0.24),rgba(15,23,42,1))] md:col-span-2"
-                  >
-                    <div className="absolute right-0 top-0 h-24 w-24 rounded-full bg-blue-400/10 blur-2xl transition group-hover:bg-blue-400/20" />
-                    <div className="relative">
-                      <div className="inline-flex rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
-                        New
-                      </div>
-                      <p className="mt-3 text-lg font-medium text-white">
-                        Degree Tracker
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-slate-300">
-                        Track overall progress, see how far through your degree you
-                        are, and stay motivated with the bigger picture.
-                      </p>
-                      <p className="mt-4 text-sm font-medium text-blue-300 transition group-hover:text-blue-200">
-                        Open degree tracker →
+                      <p className="text-sm text-slate-400">
+                        {xpIntoLevel}/{xpNeededForNextLevel} XP
                       </p>
                     </div>
-                  </Link>
+
+                    <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className="h-full rounded-full bg-white transition-all duration-500"
+                        style={{ width: `${Math.max(6, levelProgress)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => handleShareScore(cooked.score)}
+                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                    >
+                      Share my score
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCopyInvite}
+                      className="rounded-2xl border border-blue-400/20 bg-blue-500/10 px-4 py-3 text-sm font-medium text-blue-200 transition hover:border-blue-400 hover:bg-blue-500/20"
+                    >
+                      Copy invite link
+                    </button>
+                  </div>
+
+                  <div className="mt-6 rounded-[22px] border border-white/10 bg-white p-4">
+                    <Image
+                      src="/logo.png"
+                      alt="LockdIn logo"
+                      width={260}
+                      height={260}
+                      className="mx-auto h-auto w-[150px] object-contain sm:w-[185px]"
+                      priority
+                    />
+                  </div>
                 </div>
               </div>
-            </section>
+            </div>
+          </section>
 
-            <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-              <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
-                <div className="flex items-center justify-between gap-4">
-                  <h3 className="text-xl font-semibold sm:text-2xl">
-                    Today’s Study Plan
-                  </h3>
-                  <Link
-                    href="/planner"
-                    className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
-                  >
-                    Open planner
-                  </Link>
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-[24px] border border-orange-400/20 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
+              <div className="flex items-center gap-2 text-sm text-orange-300">
+                <Flame className="h-4 w-4" />
+                Streak
+              </div>
+              <p className="mt-4 text-4xl font-semibold text-white">
+                {profile ? profile.streak : 0}
+              </p>
+              <p className="mt-2 text-sm text-slate-400">
+                Best streak: {profile ? profile.best_streak : 0} days
+              </p>
+            </div>
+
+            <div className="rounded-[24px] border border-cyan-400/20 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
+              <div className="flex items-center gap-2 text-sm text-cyan-300">
+                <Trophy className="h-4 w-4" />
+                XP & Level
+              </div>
+              <p className="mt-4 text-4xl font-semibold text-white">{profileLevel}</p>
+              <p className="mt-2 text-sm text-slate-400">{profile?.xp ?? 0} XP total</p>
+            </div>
+
+            <div className="rounded-[24px] border border-emerald-400/20 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
+              <div className="flex items-center gap-2 text-sm text-emerald-300">
+                <Shield className="h-4 w-4" />
+                Completion
+              </div>
+              <p className="mt-4 text-4xl font-semibold text-white">
+                {loading ? "..." : `${stats.completionRate}%`}
+              </p>
+              <p className="mt-2 text-sm text-slate-400">
+                {loading ? "..." : `${stats.completed} completed tasks`}
+              </p>
+            </div>
+
+            <div className="rounded-[24px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
+              <div className="flex items-center gap-2 text-sm text-slate-300">
+                <CalendarDays className="h-4 w-4" />
+                Study Plan
+              </div>
+              <p className="mt-4 text-4xl font-semibold text-white">
+                {loading ? "..." : stats.studyHours}
+              </p>
+              <p className="mt-2 text-sm text-slate-400">
+                {loading ? "..." : `${stats.completedStudyBlocks} blocks done`}
+              </p>
+            </div>
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
+            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-400/20">
+                    <Trophy className="h-3.5 w-3.5" />
+                    Social Pressure
+                  </div>
+                  <h2 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
+                    🔥 Cooked Leaderboard
+                  </h2>
+                  <p className="mt-2 text-sm text-slate-400">
+                    {leaderboardHeadline}
+                  </p>
+                  {yourRank ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Your current rank: #{yourRank}
+                    </p>
+                  ) : null}
                 </div>
 
-                <div className="mt-6 space-y-4">
-                  {todaysStudyBlocks.length === 0 ? (
-                    <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
-                      No study blocks for today yet. Add one before you drift.
-                    </div>
-                  ) : (
-                    todaysStudyBlocks.slice(0, 4).map((block) => (
-                      <div
-                        key={block.id}
-                        className="rounded-2xl border border-white/10 bg-[#101b38] p-4 sm:p-5"
-                      >
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="min-w-0">
-                            <p className="text-base font-medium text-white">
-                              {block.subject}
-                            </p>
-                            <p className="mt-2 text-sm text-slate-400">
-                              {block.focus}
-                            </p>
+                {isLoggedIn ? (
+                  <button
+                    type="button"
+                    onClick={() => handleShareLeaderboard(sortedLeaderboard)}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                  >
+                    Share leaderboard
+                  </button>
+                ) : null}
+              </div>
+
+              {isLoggedIn ? (
+                <>
+                  <form
+                    onSubmit={handleAddFriend}
+                    className="mt-6 grid gap-3 md:grid-cols-[1fr_auto]"
+                  >
+                    <input
+                      type="text"
+                      value={friendUsername}
+                      onChange={(e) => setFriendUsername(e.target.value)}
+                      placeholder="Add friend by username"
+                      className="rounded-2xl border border-white/10 bg-[#101b38] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
+                    />
+
+                    <button
+                      type="submit"
+                      disabled={addingFriend}
+                      className="rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {addingFriend ? "Adding..." : "Add friend"}
+                    </button>
+                  </form>
+
+                  <p className="mt-3 text-xs text-slate-500">
+                    Add friends by their LockdIn username. You only need to add them once.
+                  </p>
+
+                  {friendError ? (
+                    <p className="mt-3 text-sm text-rose-300">{friendError}</p>
+                  ) : null}
+
+                  {friendSuccess ? (
+                    <p className="mt-3 text-sm text-emerald-300">{friendSuccess}</p>
+                  ) : null}
+
+                  <div className="mt-6 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setLeaderboardMode("mostCooked")}
+                      className={`rounded-full px-4 py-2 text-sm transition ${
+                        leaderboardMode === "mostCooked"
+                          ? "bg-rose-500/15 text-rose-300 ring-1 ring-rose-400/20"
+                          : "bg-white/5 text-slate-300 hover:bg-white/10"
+                      }`}
+                    >
+                      Most Cooked
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLeaderboardMode("biggestComeback")}
+                      className={`rounded-full px-4 py-2 text-sm transition ${
+                        leaderboardMode === "biggestComeback"
+                          ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/20"
+                          : "bg-white/5 text-slate-300 hover:bg-white/10"
+                      }`}
+                    >
+                      Biggest Comeback
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLeaderboardMode("mostLockedIn")}
+                      className={`rounded-full px-4 py-2 text-sm transition ${
+                        leaderboardMode === "mostLockedIn"
+                          ? "bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/20"
+                          : "bg-white/5 text-slate-300 hover:bg-white/10"
+                      }`}
+                    >
+                      Most Locked In
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLeaderboardMode("mostActive")}
+                      className={`rounded-full px-4 py-2 text-sm transition ${
+                        leaderboardMode === "mostActive"
+                          ? "bg-amber-500/15 text-amber-300 ring-1 ring-amber-400/20"
+                          : "bg-white/5 text-slate-300 hover:bg-white/10"
+                      }`}
+                    >
+                      Most Active
+                    </button>
+                  </div>
+
+                  <div className="mt-6 space-y-4">
+                    {leaderboardLoading ? (
+                      <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                        Loading leaderboard...
+                      </div>
+                    ) : sortedLeaderboard.length === 0 ? (
+                      <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                        No one on the leaderboard yet. Add a friend by username to
+                        start the chaos.
+                      </div>
+                    ) : (
+                      sortedLeaderboard.slice(0, 5).map((entry, index) => (
+                        <div
+                          key={entry.id}
+                          className={`rounded-2xl border p-4 sm:p-5 ${getLeaderboardAccent(
+                            entry.cookedScore
+                          )} ${entry.isYou ? "ring-1 ring-blue-400/30" : ""}`}
+                        >
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                  #{entry.rank}
+                                </span>
+
+                                {index === 0 ? (
+                                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1 text-xs text-amber-300">
+                                    <span className="inline-flex items-center gap-1">
+                                      <Crown className="h-3 w-3" />
+                                      Top
+                                    </span>
+                                  </span>
+                                ) : null}
+
+                                <p className="break-words text-base font-semibold text-white">
+                                  @{entry.username}
+                                </p>
+
+                                {entry.isYou ? (
+                                  <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs text-blue-200">
+                                    You
+                                  </span>
+                                ) : null}
+
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                  {entry.roastLabel}
+                                </span>
+                              </div>
+
+                              <p className="mt-2 text-sm text-slate-400">
+                                {entry.course} • {entry.university}
+                              </p>
+
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                  {entry.pendingTasks} active task
+                                  {entry.pendingTasks === 1 ? "" : "s"}
+                                </span>
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                  {entry.completionRate}% completion
+                                </span>
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                  {entry.streak} day streak
+                                </span>
+                                <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                                  {entry.momentumLabel}
+                                </span>
+                                <span
+                                  className={`rounded-full border px-3 py-1 text-xs ${
+                                    entry.weeklyCookedChange < 0
+                                      ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-300"
+                                      : entry.weeklyCookedChange > 0
+                                      ? "border-rose-400/20 bg-rose-500/10 text-rose-300"
+                                      : "border-white/10 bg-white/5 text-slate-300"
+                                  }`}
+                                >
+                                  7d cooked: {entry.weeklyCookedChange > 0 ? "+" : ""}
+                                  {entry.weeklyCookedChange}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="text-left sm:text-right">
+                              <p
+                                className={`text-3xl font-semibold sm:text-4xl ${getCookedTextColor(
+                                  entry.cookedScore
+                                )}`}
+                              >
+                                {entry.cookedScore}
+                              </p>
+                              <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
+                                cooked score
+                              </p>
+                              <p className="mt-2 text-sm text-slate-300">
+                                {entry.status}
+                              </p>
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-sm font-medium text-white">{block.time}</p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              {block.duration_minutes ?? block.durationMinutes ?? 0} mins
-                            </p>
+
+                          <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-black/20">
+                            <div
+                              className={`h-full rounded-full ${getCookedBarClass(
+                                entry.cookedScore
+                              )}`}
+                              style={{
+                                width: `${Math.max(6, entry.cookedScore)}%`,
+                              }}
+                            />
                           </div>
                         </div>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="mt-6 rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                  Log in to start a cooked leaderboard with your friends.
                 </div>
-              </div>
+              )}
+            </div>
 
-              <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#111827_0%,#0f172a_100%)] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
-                <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/10">
-                  <Zap className="h-3.5 w-3.5" />
-                  LockdIn Hook
+            <div className="space-y-6">
+              <div
+                className={`rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6 ${getCookedGlowClass(
+                  cooked.score
+                )}`}
+              >
+                <div className="flex items-center gap-2 text-sm text-slate-400">
+                  <Flame className="h-4 w-4 text-orange-300" />
+                  Score Breakdown
                 </div>
 
-                <h3 className="mt-4 text-2xl font-semibold text-white">
-                  Student survival, but actually clean.
-                </h3>
+                <div className="mt-4 flex items-end gap-3">
+                  <span
+                    className={`text-5xl font-semibold ${getCookedTextColor(
+                      cooked.score
+                    )}`}
+                  >
+                    {loading ? "..." : cooked.score}
+                  </span>
+                  <span className="pb-2 text-xl text-slate-500">/100</span>
+                </div>
 
-                <p className="mt-4 text-sm leading-7 text-slate-300">
-                  Your cooked score, streak, deadlines, planner, and leaderboard now
-                  all point toward one thing: helping you stay ahead instead of
-                  reacting too late.
+                <p className="mt-2 text-base font-medium text-white">
+                  {loading ? "Loading..." : cooked.status}
                 </p>
 
-                <div className="mt-6 grid grid-cols-2 gap-4">
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                      Active tasks
-                    </p>
-                    <p className="mt-2 text-3xl font-semibold text-white">
-                      {stats.pending}
-                    </p>
-                  </div>
+                <p className="mt-2 text-sm text-slate-400">
+                  {loading
+                    ? "Loading your score..."
+                    : getMotivationLine(cooked.score, stats.pending, stats.overdue)}
+                </p>
 
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                      Urgent
-                    </p>
-                    <p className="mt-2 text-3xl font-semibold text-white">
-                      {stats.urgent}
-                    </p>
-                  </div>
+                <div className="mt-5 h-3 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${getCookedBarClass(
+                      cooked.score
+                    )}`}
+                    style={{
+                      width: `${Math.max(6, loading ? 6 : cooked.score)}%`,
+                    }}
+                  />
+                </div>
 
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                      Open study blocks
-                    </p>
-                    <p className="mt-2 text-3xl font-semibold text-white">
-                      {stats.openStudyBlocks}
-                    </p>
-                  </div>
+                <ul className="mt-5 space-y-3">
+                  {(loading ? ["Loading your risk factors..."] : cooked.reasons).map(
+                    (reason) => (
+                      <li
+                        key={reason}
+                        className="flex items-start gap-3 text-sm text-slate-200"
+                      >
+                        <span className="mt-2 h-2 w-2 rounded-full bg-blue-400" />
+                        <span>{reason}</span>
+                      </li>
+                    )
+                  )}
+                </ul>
 
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                      Planner completion
-                    </p>
-                    <p className="mt-2 text-3xl font-semibold text-white">
-                      {stats.plannerCompletionRate}%
-                    </p>
-                  </div>
+                <div className="mt-6">
+                  {bestRecoveryAction ? (
+                    <Link
+                      href={bestRecoveryAction.route}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
+                    >
+                      <Zap className="h-4 w-4" />
+                      Reduce My Score
+                    </Link>
+                  ) : (
+                    <Link
+                      href="/tasks"
+                      className="inline-flex w-full items-center justify-center rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
+                    >
+                      Add a Task
+                    </Link>
+                  )}
                 </div>
               </div>
-            </section>
 
-            {isLoadingPage ? (
-              <section className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-sm text-white/70">
-                Loading LockdIn...
-              </section>
-            ) : null}
-          </div>
+              <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-6">
+                <div className="inline-flex items-center gap-2 rounded-full bg-blue-500/15 px-3 py-1 text-xs font-medium text-blue-300 ring-1 ring-blue-400/20">
+                  <Target className="h-3.5 w-3.5" />
+                  AI Coach
+                </div>
+
+                <h2 className="mt-4 text-2xl font-semibold tracking-tight">
+                  {loading ? "Loading..." : coachTitle}
+                </h2>
+
+                <p className="mt-4 text-sm leading-7 text-slate-300">
+                  {loading ? "Syncing your coach view..." : coachMessage}
+                </p>
+
+                <div className="mt-5 rounded-2xl border border-white/10 bg-[#101b38] p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                    Recommended next step
+                  </p>
+                  <p className="mt-3 text-sm leading-7 text-white">
+                    {loading
+                      ? "Loading recommendation..."
+                      : stats.overdue > 0
+                      ? "Open Tasks and complete the most overdue item first."
+                      : stats.highPriority > 0
+                      ? "Finish your next high-priority task before switching context."
+                      : stats.pending > 0
+                      ? "Use Planner to assign focused time to your remaining workload."
+                      : "Use Planner to map out your next study block while you’re ahead."}
+                  </p>
+                </div>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  <Link
+                    href="/tasks"
+                    className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
+                  >
+                    Open Tasks
+                  </Link>
+                  <Link
+                    href="/planner"
+                    className="rounded-2xl border border-white/10 bg-[#101b38] p-4 text-sm text-slate-200 transition hover:border-blue-400 hover:bg-[#122145]"
+                  >
+                    Build study plan
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+              <div className="flex items-center justify-between gap-4">
+                <h3 className="text-xl font-semibold sm:text-2xl">Biggest Threat</h3>
+                <Link
+                  href="/performance"
+                  className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
+                >
+                  Open dashboard
+                </Link>
+              </div>
+
+              {loading ? (
+                <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 text-slate-300 sm:p-6">
+                  Loading your biggest threat...
+                </div>
+              ) : biggestThreat ? (
+                <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 sm:p-6">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-lg font-semibold break-words">
+                        {biggestThreat.title}
+                      </p>
+                      <p className="mt-2 text-sm text-slate-400">
+                        {biggestThreat.module}
+                      </p>
+                    </div>
+                    <span
+                      className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
+                        biggestThreat.priority
+                      )}`}
+                    >
+                      {biggestThreat.priority}
+                    </span>
+                  </div>
+
+                  <p className="mt-5 text-sm text-slate-300">
+                    Due {biggestThreat.dueDate}
+                  </p>
+
+                  <p className="mt-2 text-sm text-slate-400">
+                    {getUpcomingLabel(getDaysUntil(biggestThreat.dueDate))}
+                  </p>
+
+                  <Link
+                    href="/tasks"
+                    className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-400"
+                  >
+                    Go to tasks
+                    <ChevronRight className="h-4 w-4" />
+                  </Link>
+                </div>
+              ) : (
+                <div className="mt-6 rounded-3xl border border-white/10 bg-[#101b38] p-5 text-slate-300 sm:p-6">
+                  No immediate threats right now. That is a very nice position to be in.
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+              <div className="flex items-center justify-between gap-4">
+                <h3 className="text-xl font-semibold sm:text-2xl">Today’s Focus</h3>
+                <Link
+                  href="/tasks"
+                  className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
+                >
+                  Manage tasks
+                </Link>
+              </div>
+
+              <div className="mt-6 space-y-4">
+                {loading ? (
+                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                    Loading focus tasks...
+                  </div>
+                ) : todayFocus.length === 0 ? (
+                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                    No active tasks right now. That board is looking clean.
+                  </div>
+                ) : (
+                  todayFocus.map((task, index) => (
+                    <div
+                      key={task.id}
+                      className="rounded-2xl border border-white/10 bg-[#101b38] p-4 sm:p-5"
+                    >
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                            Focus {index + 1}
+                          </p>
+                          <p className="mt-2 break-words text-base font-medium text-white">
+                            {task.title}
+                          </p>
+                          <p className="mt-2 text-sm text-slate-400">{task.module}</p>
+                          <p className="mt-2 text-sm text-slate-500">
+                            {getUpcomingLabel(getDaysUntil(task.dueDate))}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
+                            task.priority
+                          )}`}
+                        >
+                          {task.priority}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+              <div className="flex items-center justify-between gap-4">
+                <h3 className="text-xl font-semibold sm:text-2xl">Recent Tasks</h3>
+                <Link
+                  href="/tasks"
+                  className="text-sm font-medium text-blue-400 transition hover:text-blue-300"
+                >
+                  View all
+                </Link>
+              </div>
+
+              <div className="mt-6 space-y-4">
+                {loading ? (
+                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                    Loading recent tasks...
+                  </div>
+                ) : stats.recent.length === 0 ? (
+                  <div className="rounded-2xl border border-white/10 bg-[#101b38] p-5 text-slate-300">
+                    No tasks yet. Add your first task to get started.
+                  </div>
+                ) : (
+                  stats.recent.map((task) => (
+                    <div
+                      key={task.id}
+                      className="rounded-2xl border border-white/10 bg-[#101b38] p-4 sm:p-5"
+                    >
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p
+                            className={`break-words text-base font-medium ${
+                              task.completed
+                                ? "text-slate-500 line-through"
+                                : "text-white"
+                            }`}
+                          >
+                            {task.title}
+                          </p>
+                          <p className="mt-2 text-sm text-slate-400">{task.module}</p>
+                          <p className="mt-2 text-sm text-slate-500">
+                            Due: {task.dueDate}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`w-fit rounded-full px-3 py-1 text-xs font-medium ${getPriorityBadge(
+                            task.priority
+                          )}`}
+                        >
+                          {task.priority}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-white/10 bg-[#08122b] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)] sm:p-8">
+              <div className="flex items-center justify-between gap-4">
+                <h3 className="text-xl font-semibold sm:text-2xl">Quick Access</h3>
+                <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
+                  Move faster
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                <Link
+                  href="/tasks"
+                  className="rounded-2xl border border-white/10 bg-[#101b38] p-5 transition hover:border-blue-400 hover:bg-[#122145]"
+                >
+                  <p className="text-lg font-medium">Tasks</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    Add work, manage deadlines, and update progress.
+                  </p>
+                </Link>
+
+                <Link
+                  href="/planner"
+                  className="rounded-2xl border border-white/10 bg-[#101b38] p-5 transition hover:border-blue-400 hover:bg-[#122145]"
+                >
+                  <p className="text-lg font-medium">Planner</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    Turn your workload into realistic study blocks.
+                  </p>
+                </Link>
+
+                <Link
+                  href="/performance"
+                  className="rounded-2xl border border-white/10 bg-[#101b38] p-5 transition hover:border-blue-400 hover:bg-[#122145]"
+                >
+                  <p className="text-lg font-medium">Performance</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    Track pressure, momentum, and what to fix next.
+                  </p>
+                </Link>
+
+                <Link
+                  href="/analytics"
+                  className="rounded-2xl border border-cyan-400/20 bg-[linear-gradient(135deg,rgba(34,211,238,0.18),rgba(15,23,42,0.95))] p-5 transition hover:border-cyan-400 hover:bg-[linear-gradient(135deg,rgba(34,211,238,0.24),rgba(15,23,42,1))]"
+                >
+                  <p className="text-lg font-medium text-white">Analytics</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    View cooked score history, completed tasks, and study hours.
+                  </p>
+                </Link>
+
+                <Link
+                  href="/badges"
+                  className="rounded-2xl border border-amber-400/20 bg-[linear-gradient(135deg,rgba(251,191,36,0.18),rgba(15,23,42,0.95))] p-5 transition hover:border-amber-400 hover:bg-[linear-gradient(135deg,rgba(251,191,36,0.24),rgba(15,23,42,1))]"
+                >
+                  <p className="text-lg font-medium text-white">Badges</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    Track your milestones, streaks, and progress achievements.
+                  </p>
+                </Link>
+
+                <Link
+                  href="/degree-tracker"
+                  className="group relative overflow-hidden rounded-2xl border border-blue-400/20 bg-[linear-gradient(135deg,rgba(59,130,246,0.18),rgba(15,23,42,0.95))] p-5 transition hover:border-blue-400 hover:bg-[linear-gradient(135deg,rgba(59,130,246,0.24),rgba(15,23,42,1))] md:col-span-2"
+                >
+                  <div className="absolute right-0 top-0 h-24 w-24 rounded-full bg-blue-400/10 blur-2xl transition group-hover:bg-blue-400/20" />
+                  <div className="relative">
+                    <div className="inline-flex rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
+                      New
+                    </div>
+                    <p className="mt-3 text-lg font-medium text-white">
+                      Degree Tracker
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">
+                      Track overall progress, see how far through your degree you
+                      are, and stay motivated with the bigger picture.
+                    </p>
+                    <p className="mt-4 text-sm font-medium text-blue-300 transition group-hover:text-blue-200">
+                      Open degree tracker →
+                    </p>
+                  </div>
+                </Link>
+              </div>
+            </div>
+          </section>
         </div>
-      </main>
-    </AppShell>
+      </div>
+    </main>
   );
 }
