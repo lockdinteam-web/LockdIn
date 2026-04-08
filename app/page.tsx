@@ -126,6 +126,10 @@ type DatabaseStudyBlock = {
   location: string;
 };
 
+type HomeStudyBlock = StudyBlock & {
+  location?: string;
+};
+
 const STUDY_PLAN_STORAGE_KEY = "lockdin_study_plan";
 
 function getDaysUntil(dateString: string) {
@@ -410,7 +414,7 @@ export default function HomePage() {
   const router = useRouter();
   const { tasks: providerTasks, loading } = useTasks();
 
-  const [studyBlocks, setStudyBlocks] = useState<StudyBlock[]>([]);
+  const [studyBlocks, setStudyBlocks] = useState<HomeStudyBlock[]>([]);
   const [studyBlocksLoading, setStudyBlocksLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [profile, setProfile] = useState<HomeProfile | null>(null);
@@ -443,7 +447,7 @@ export default function HomePage() {
         console.error("Error loading study blocks:", error.message);
 
         if (typeof window !== "undefined") {
-          const fallback = safeParseArray<StudyBlock>(
+          const fallback = safeParseArray<HomeStudyBlock>(
             localStorage.getItem(STUDY_PLAN_STORAGE_KEY)
           );
           setStudyBlocks(fallback);
@@ -452,20 +456,20 @@ export default function HomePage() {
         }
         return;
       }
-      
-const mapped: StudyBlock[] = ((data ?? []) as DatabaseStudyBlock[]).map(
-  (block) => ({
-    id: block.id,
-    day: block.day,
-    time: block.time,
-    subject: block.subject,
-    focus: block.focus,
-    taskId: block.task_id ?? "",
-    durationMinutes: block.duration_minutes,
-    completed: block.completed,
-    location: block.location,
-  })
-);
+
+      const mapped: HomeStudyBlock[] = ((data ?? []) as DatabaseStudyBlock[]).map(
+        (block) => ({
+          id: block.id,
+          day: block.day,
+          time: block.time,
+          subject: block.subject,
+          focus: block.focus,
+          taskId: block.task_id ?? "",
+          durationMinutes: block.duration_minutes,
+          completed: block.completed,
+          location: block.location,
+        })
+      );
 
       setStudyBlocks(mapped);
     } catch (error) {
@@ -803,7 +807,7 @@ const mapped: StudyBlock[] = ((data ?? []) as DatabaseStudyBlock[]).map(
   useEffect(() => {
     if (typeof window !== "undefined") {
       setStudyBlocks(
-        safeParseArray<StudyBlock>(localStorage.getItem(STUDY_PLAN_STORAGE_KEY))
+        safeParseArray<HomeStudyBlock>(localStorage.getItem(STUDY_PLAN_STORAGE_KEY))
       );
     }
 
@@ -2115,7 +2119,7 @@ const mapped: StudyBlock[] = ((data ?? []) as DatabaseStudyBlock[]).map(
                             </p>
                             <div className="mt-3 flex flex-wrap gap-2">
                               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
-                                {block.location}
+                                {block.location || "Study session"}
                               </span>
                               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
                                 {block.durationMinutes} mins
