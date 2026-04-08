@@ -15,9 +15,15 @@ import {
   Trophy,
   Flame,
   Sparkles,
+  Target,
+  Clock3,
+  Filter,
+  ChevronRight,
+  Zap,
 } from "lucide-react";
 
 type Priority = "High" | "Medium" | "Low";
+type TaskFilter = "All" | "Active" | "Completed" | "Overdue";
 
 type Task = {
   id: string;
@@ -323,6 +329,84 @@ async function maybeUnlockStreakBadge(userId: string, streak: number) {
   }
 }
 
+function formatDate(date: string) {
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return date;
+
+  return parsed.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function getDaysUntilDue(date: string) {
+  const due = new Date(date);
+  const today = new Date();
+
+  today.setHours(0, 0, 0, 0);
+  due.setHours(0, 0, 0, 0);
+
+  return Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function getDueLabel(task: Task) {
+  const diffDays = getDaysUntilDue(task.dueDate);
+
+  if (task.completed) {
+    return {
+      label: "Completed",
+      className: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
+    };
+  }
+
+  if (diffDays < 0) {
+    return {
+      label: `${Math.abs(diffDays)}d overdue`,
+      className: "border-red-500/20 bg-red-500/10 text-red-300",
+    };
+  }
+
+  if (diffDays === 0) {
+    return {
+      label: "Due today",
+      className: "border-orange-500/20 bg-orange-500/10 text-orange-300",
+    };
+  }
+
+  if (diffDays === 1) {
+    return {
+      label: "Due tomorrow",
+      className: "border-amber-500/20 bg-amber-500/10 text-amber-300",
+    };
+  }
+
+  if (diffDays <= 3) {
+    return {
+      label: `Due in ${diffDays} days`,
+      className: "border-yellow-500/20 bg-yellow-500/10 text-yellow-300",
+    };
+  }
+
+  return {
+    label: `Due in ${diffDays} days`,
+    className: "border-blue-500/20 bg-blue-500/10 text-blue-300",
+  };
+}
+
+function getPriorityClasses(priority: Priority) {
+  switch (priority) {
+    case "High":
+      return "border-red-500/20 bg-red-500/10 text-red-300";
+    case "Medium":
+      return "border-amber-500/20 bg-amber-500/10 text-amber-300";
+    case "Low":
+      return "border-emerald-500/20 bg-emerald-500/10 text-emerald-300";
+    default:
+      return "border-slate-500/20 bg-slate-500/10 text-slate-300";
+  }
+}
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -336,6 +420,8 @@ export default function TasksPage() {
   const [level, setLevel] = useState(1);
   const [streak, setStreak] = useState(0);
   const [bestStreak, setBestStreak] = useState(0);
+
+  const [filter, setFilter] = useState<TaskFilter>("All");
 
   useEffect(() => {
     let mounted = true;
@@ -547,6 +633,11 @@ export default function TasksPage() {
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter((task) => task.completed).length;
   const activeTasks = totalTasks - completedTasks;
+  const overdueTasks = tasks.filter(
+    (task) => !task.completed && getDaysUntilDue(task.dueDate) < 0
+  ).length;
+
+  const cookedScore = useMemo(() => calculateSimpleCookedScore(tasks), [tasks]);
 
   const sortedTasks = useMemo(() => {
     return [...tasks].sort((a, b) => {
@@ -555,324 +646,450 @@ export default function TasksPage() {
     });
   }, [tasks]);
 
+  const filteredTasks = useMemo(() => {
+    switch (filter) {
+      case "Active":
+        return sortedTasks.filter((task) => !task.completed);
+      case "Completed":
+        return sortedTasks.filter((task) => task.completed);
+      case "Overdue":
+        return sortedTasks.filter(
+          (task) => !task.completed && getDaysUntilDue(task.dueDate) < 0
+        );
+      default:
+        return sortedTasks;
+    }
+  }, [sortedTasks, filter]);
+
   const xpIntoLevel = getXpIntoCurrentLevel(xp);
   const xpNeededForNextLevel = getXpNeededForNextLevel();
   const levelProgress = Math.min((xpIntoLevel / xpNeededForNextLevel) * 100, 100);
 
-  function getPriorityClasses(priority: Priority) {
-    switch (priority) {
-      case "High":
-        return "bg-red-500/15 text-red-300 border border-red-500/20";
-      case "Medium":
-        return "bg-amber-500/15 text-amber-300 border border-amber-500/20";
-      case "Low":
-        return "bg-emerald-500/15 text-emerald-300 border border-emerald-500/20";
-      default:
-        return "bg-slate-500/15 text-slate-300 border border-slate-500/20";
-    }
-  }
-
-  function formatDate(date: string) {
-    const parsed = new Date(date);
-    if (Number.isNaN(parsed.getTime())) return date;
-
-    return parsed.toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  }
-
   return (
     <AppShell>
       <div className="min-h-screen bg-slate-950 text-white">
-        <div className="mx-auto max-w-7xl px-6 py-10 md:px-8 xl:px-10">
-          <div className="mb-10 flex flex-col gap-6">
-            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <div>
-                <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">
-                  Workspace
-                </p>
-                <h1 className="mt-2 text-4xl font-bold tracking-tight md:text-5xl">
-                  Your Tasks
-                </h1>
-                <p className="mt-3 max-w-2xl text-slate-400">
-                  Add tasks, track deadlines, and keep on top of your workload
-                  with a cleaner, more focused view.
-                </p>
-              </div>
+        <div className="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-8">
+          <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 p-5 shadow-[0_20px_80px_rgba(0,0,0,0.45)] md:p-8">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.18),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(168,85,247,0.14),transparent_24%)]" />
 
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-300">
-                  <ClipboardList className="h-4 w-4 text-blue-400" />
-                  {activeTasks} active task{activeTasks !== 1 ? "s" : ""}
+            <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+              <div className="max-w-3xl">
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-400/20 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  LockdIn task hub
                 </div>
 
+                <h1 className="text-3xl font-bold tracking-tight md:text-5xl">
+                  Your Tasks
+                </h1>
+
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
+                  Plan deadlines, stay on top of modules, and turn your workload into
+                  something actually manageable.
+                </p>
+
+                <div className="mt-5 flex flex-wrap items-center gap-3">
+                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
+                    {activeTasks} active
+                  </div>
+                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
+                    {completedTasks} completed
+                  </div>
+                  <div className="rounded-full border border-red-500/20 bg-red-500/10 px-3 py-1 text-xs font-medium text-red-300">
+                    {overdueTasks} overdue
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:w-[390px]">
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-300 transition hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-300"
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/10"
                 >
                   Log out
                 </button>
+
+                <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-200">
+                  XP rewards live
+                </div>
+
+                <div className="rounded-2xl border border-orange-500/20 bg-orange-500/10 px-4 py-3">
+                  <div className="flex items-center gap-2 text-orange-300">
+                    <Flame className="h-4 w-4" />
+                    <span className="text-sm font-medium">Streak</span>
+                  </div>
+                  <p className="mt-2 text-2xl font-bold text-white">{streak}</p>
+                  <p className="mt-1 text-xs text-orange-200/70">
+                    Best: {bestStreak} days
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3">
+                  <div className="flex items-center gap-2 text-cyan-300">
+                    <Trophy className="h-4 w-4" />
+                    <span className="text-sm font-medium">Level {level}</span>
+                  </div>
+                  <p className="mt-2 text-2xl font-bold text-white">{xp} XP</p>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-white transition-all duration-500"
+                      style={{ width: `${Math.max(6, levelProgress)}%` }}
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-cyan-200/70">
+                    {xpIntoLevel}/{xpNeededForNextLevel} to next level
+                  </p>
+                </div>
               </div>
             </div>
+          </div>
 
-            <div className="grid gap-4 md:grid-cols-5">
-              <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg shadow-black/20">
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-blue-500/10 p-2.5 text-blue-300">
+                  <ClipboardList className="h-5 w-5" />
+                </div>
                 <p className="text-sm text-slate-400">Total Tasks</p>
-                <h2 className="mt-2 text-3xl font-bold">{totalTasks}</h2>
               </div>
+              <p className="mt-4 text-3xl font-bold text-white">{totalTasks}</p>
+            </div>
 
-              <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg shadow-black/20">
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-blue-500/10 p-2.5 text-blue-300">
+                  <Target className="h-5 w-5" />
+                </div>
                 <p className="text-sm text-slate-400">Active</p>
-                <h2 className="mt-2 text-3xl font-bold text-blue-400">
-                  {activeTasks}
-                </h2>
               </div>
+              <p className="mt-4 text-3xl font-bold text-blue-300">{activeTasks}</p>
+            </div>
 
-              <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg shadow-black/20">
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-emerald-500/10 p-2.5 text-emerald-300">
+                  <CheckCircle2 className="h-5 w-5" />
+                </div>
                 <p className="text-sm text-slate-400">Completed</p>
-                <h2 className="mt-2 text-3xl font-bold text-emerald-400">
-                  {completedTasks}
-                </h2>
               </div>
+              <p className="mt-4 text-3xl font-bold text-emerald-300">
+                {completedTasks}
+              </p>
+            </div>
 
-              <div className="rounded-3xl border border-orange-500/20 bg-orange-500/10 p-5 shadow-lg shadow-black/20">
-                <div className="flex items-center gap-2 text-orange-300">
-                  <Flame className="h-4 w-4" />
-                  <p className="text-sm">Streak</p>
+            <div className="rounded-[28px] border border-red-500/20 bg-red-500/10 p-5 backdrop-blur-xl">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-red-500/10 p-2.5 text-red-300">
+                  <Clock3 className="h-5 w-5" />
                 </div>
-                <h2 className="mt-2 text-3xl font-bold text-white">{streak}</h2>
-                <p className="mt-2 text-xs text-orange-200/70">
-                  Best: {bestStreak} days
-                </p>
+                <p className="text-sm text-red-200/80">Overdue</p>
               </div>
+              <p className="mt-4 text-3xl font-bold text-white">{overdueTasks}</p>
+            </div>
 
-              <div className="rounded-3xl border border-cyan-500/20 bg-cyan-500/10 p-5 shadow-lg shadow-black/20">
-                <div className="flex items-center gap-2 text-cyan-300">
-                  <Trophy className="h-4 w-4" />
-                  <p className="text-sm">Level {level}</p>
+            <div className="rounded-[28px] border border-amber-500/20 bg-amber-500/10 p-5 backdrop-blur-xl">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-amber-500/10 p-2.5 text-amber-300">
+                  <Zap className="h-5 w-5" />
                 </div>
-                <h2 className="mt-2 text-3xl font-bold text-white">{xp}</h2>
-                <p className="mt-2 text-xs text-cyan-200/70">total XP</p>
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
-                  <div
-                    className="h-full rounded-full bg-white transition-all duration-500"
-                    style={{ width: `${Math.max(6, levelProgress)}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-xs text-cyan-200/70">
-                  {xpIntoLevel}/{xpNeededForNextLevel} to next level
-                </p>
+                <p className="text-sm text-amber-200/80">Cooked score</p>
               </div>
+              <p className="mt-4 text-3xl font-bold text-white">{cookedScore}</p>
             </div>
           </div>
 
-          <form
-            onSubmit={handleAddTask}
-            className="mb-10 rounded-3xl border border-slate-800 bg-slate-900/90 p-6 shadow-2xl shadow-black/20"
-          >
-            <div className="mb-6 flex items-center gap-3">
-              <div className="rounded-2xl bg-blue-500/15 p-3">
-                <Plus className="h-5 w-5 text-blue-400" />
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold">Add New Task</h2>
-                <p className="text-sm text-slate-400">
-                  Create a task with a title, module, deadline, and priority.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div className="flex flex-col gap-2">
-                <label className="text-sm text-slate-400">Task Title</label>
-                <div className="flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 focus-within:border-blue-500/50">
-                  <ClipboardList className="h-4 w-4 text-slate-500" />
-                  <input
-                    type="text"
-                    placeholder="e.g. Finish coursework draft"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="w-full bg-transparent text-white outline-none placeholder:text-slate-500"
-                  />
+          <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_1.35fr]">
+            <div className="space-y-6">
+              <form
+                onSubmit={handleAddTask}
+                className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="rounded-2xl bg-blue-500/10 p-3 text-blue-300">
+                    <Plus className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold text-white">Add New Task</h2>
+                    <p className="mt-1 text-sm text-slate-400">
+                      Create a task with a title, module, deadline, and priority.
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex flex-col gap-2">
-                <label className="text-sm text-slate-400">Module</label>
-                <div className="flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 focus-within:border-blue-500/50">
-                  <BookOpen className="h-4 w-4 text-slate-500" />
-                  <input
-                    type="text"
-                    placeholder="e.g. Business Strategy"
-                    value={module}
-                    onChange={(e) => setModule(e.target.value)}
-                    className="w-full bg-transparent text-white outline-none placeholder:text-slate-500"
-                  />
-                </div>
-              </div>
+                <div className="mt-5 grid gap-4">
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-400">
+                      Task title
+                    </label>
+                    <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 focus-within:border-blue-500/40">
+                      <ClipboardList className="h-4 w-4 text-slate-500" />
+                      <input
+                        type="text"
+                        placeholder="e.g. Finish coursework draft"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        className="w-full bg-transparent text-white outline-none placeholder:text-slate-500"
+                      />
+                    </div>
+                  </div>
 
-              <div className="flex flex-col gap-2">
-                <label className="text-sm text-slate-400">Due Date</label>
-                <div className="flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 focus-within:border-blue-500/50">
-                  <CalendarDays className="h-4 w-4 text-slate-500" />
-                  <input
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full bg-transparent text-white outline-none"
-                  />
-                </div>
-              </div>
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-400">
+                      Module
+                    </label>
+                    <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 focus-within:border-blue-500/40">
+                      <BookOpen className="h-4 w-4 text-slate-500" />
+                      <input
+                        type="text"
+                        placeholder="e.g. Business Strategy"
+                        value={module}
+                        onChange={(e) => setModule(e.target.value)}
+                        className="w-full bg-transparent text-white outline-none placeholder:text-slate-500"
+                      />
+                    </div>
+                  </div>
 
-              <div className="flex flex-col gap-2">
-                <label className="text-sm text-slate-400">Priority</label>
-                <div className="flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 focus-within:border-blue-500/50">
-                  <Flag className="h-4 w-4 text-slate-500" />
-                  <select
-                    value={priority}
-                    onChange={(e) => setPriority(e.target.value as Priority)}
-                    className="w-full bg-transparent text-white outline-none"
-                  >
-                    <option value="High" className="bg-slate-950">
-                      High priority
-                    </option>
-                    <option value="Medium" className="bg-slate-950">
-                      Medium priority
-                    </option>
-                    <option value="Low" className="bg-slate-950">
-                      Low priority
-                    </option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 font-semibold text-white transition hover:bg-blue-400 hover:shadow-lg hover:shadow-blue-500/20"
-            >
-              <Plus className="h-4 w-4" />
-              Add Task
-            </button>
-          </form>
-
-          <div className="mb-8 rounded-3xl border border-blue-500/20 bg-blue-500/10 p-5">
-            <div className="flex items-start gap-3">
-              <div className="rounded-2xl bg-white/10 p-2">
-                <Sparkles className="h-5 w-5 text-blue-200" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-blue-200">
-                  XP is now live
-                </p>
-                <p className="mt-2 text-sm leading-6 text-slate-300">
-                  Every time you complete a task, you earn {XP_REWARD_TASK_COMPLETE} XP.
-                  Your streak updates automatically, and badges unlock as you build momentum.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            {loading ? (
-              <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-10 text-center">
-                <h3 className="text-2xl font-semibold">Loading tasks...</h3>
-                <p className="mt-3 text-slate-400">
-                  Pulling your tasks from your account.
-                </p>
-              </div>
-            ) : tasks.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-900/70 p-10 text-center">
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-800">
-                  <ClipboardList className="h-8 w-8 text-slate-400" />
-                </div>
-                <h3 className="text-2xl font-semibold">No tasks yet</h3>
-                <p className="mx-auto mt-3 max-w-md text-slate-400">
-                  Add your first task above to start organising your work and
-                  keeping track of deadlines.
-                </p>
-              </div>
-            ) : (
-              sortedTasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="group rounded-3xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg shadow-black/10 transition hover:border-slate-700 hover:bg-slate-900"
-                >
-                  <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                    <div className="flex items-start gap-4">
-                      <button
-                        type="button"
-                        onClick={() => toggleTask(task.id)}
-                        className="mt-1 rounded-full transition hover:scale-105"
-                        aria-label={
-                          task.completed
-                            ? "Mark as incomplete"
-                            : "Mark as complete"
-                        }
-                      >
-                        {task.completed ? (
-                          <CheckCircle2 className="h-6 w-6 text-emerald-400" />
-                        ) : (
-                          <Circle className="h-6 w-6 text-slate-500" />
-                        )}
-                      </button>
-
-                      <div>
-                        <h2
-                          className={`text-xl font-semibold transition ${
-                            task.completed
-                              ? "text-slate-500 line-through"
-                              : "text-white"
-                          }`}
-                        >
-                          {task.title}
-                        </h2>
-
-                        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-400">
-                          <span className="rounded-full bg-slate-800 px-3 py-1">
-                            {task.module}
-                          </span>
-                          <span className="rounded-full bg-slate-800 px-3 py-1">
-                            Due: {formatDate(task.dueDate)}
-                          </span>
-                          <span
-                            className={`rounded-full px-3 py-1 text-sm ${getPriorityClasses(
-                              task.priority
-                            )}`}
-                          >
-                            {task.priority}
-                          </span>
-                        </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-sm text-slate-400">
+                        Due date
+                      </label>
+                      <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 focus-within:border-blue-500/40">
+                        <CalendarDays className="h-4 w-4 text-slate-500" />
+                        <input
+                          type="date"
+                          value={dueDate}
+                          onChange={(e) => setDueDate(e.target.value)}
+                          className="w-full bg-transparent text-white outline-none"
+                        />
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`rounded-full px-3 py-1 text-sm ${
-                          task.completed
-                            ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/20"
-                            : "bg-blue-500/15 text-blue-300 border border-blue-500/20"
-                        }`}
-                      >
-                        {task.completed ? "Completed" : "Active"}
-                      </span>
-
-                      <button
-                        type="button"
-                        onClick={() => deleteTask(task.id)}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-300"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Delete
-                      </button>
+                    <div>
+                      <label className="mb-2 block text-sm text-slate-400">
+                        Priority
+                      </label>
+                      <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 focus-within:border-blue-500/40">
+                        <Flag className="h-4 w-4 text-slate-500" />
+                        <select
+                          value={priority}
+                          onChange={(e) => setPriority(e.target.value as Priority)}
+                          className="w-full bg-transparent text-white outline-none"
+                        >
+                          <option value="High" className="bg-slate-950">
+                            High priority
+                          </option>
+                          <option value="Medium" className="bg-slate-950">
+                            Medium priority
+                          </option>
+                          <option value="Low" className="bg-slate-950">
+                            Low priority
+                          </option>
+                        </select>
+                      </div>
                     </div>
                   </div>
                 </div>
-              ))
-            )}
+
+                <button
+                  type="submit"
+                  className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 font-semibold text-white transition hover:bg-blue-400 hover:shadow-lg hover:shadow-blue-500/20"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add task
+                </button>
+              </form>
+
+              <div className="rounded-[28px] border border-blue-500/20 bg-blue-500/10 p-5">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-2xl bg-white/10 p-2 text-blue-200">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-blue-200">
+                      XP progression is live
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">
+                      Every completed task gives you {XP_REWARD_TASK_COMPLETE} XP.
+                      Streaks update automatically, and badges unlock as you build consistency.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-[28px] border border-white/10 bg-gradient-to-br from-blue-500/10 via-purple-500/10 to-slate-900 p-5 backdrop-blur-xl">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-slate-300">Quick tip</p>
+                    <p className="mt-2 text-lg font-semibold text-white">
+                      Clear overdue tasks first for the fastest stress reduction.
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-400">
+                      Knock out anything overdue or due today, then work forward in date order.
+                    </p>
+                  </div>
+                  <ChevronRight className="mt-1 h-5 w-5 text-slate-500" />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Filter className="h-5 w-5 text-cyan-300" />
+                      <h2 className="text-xl font-semibold text-white">Task list</h2>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-400">
+                      Focus your view by filtering what matters right now.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {(["All", "Active", "Completed", "Overdue"] as TaskFilter[]).map(
+                      (option) => {
+                        const active = filter === option;
+
+                        return (
+                          <button
+                            key={option}
+                            type="button"
+                            onClick={() => setFilter(option)}
+                            className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
+                              active
+                                ? "border-blue-400/20 bg-blue-500/10 text-blue-300"
+                                : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+                            }`}
+                          >
+                            {option}
+                          </button>
+                        );
+                      }
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {loading ? (
+                  <div className="rounded-[28px] border border-white/10 bg-white/5 p-10 text-center backdrop-blur-xl">
+                    <h3 className="text-2xl font-semibold text-white">Loading tasks...</h3>
+                    <p className="mt-3 text-slate-400">
+                      Pulling your tasks from your account.
+                    </p>
+                  </div>
+                ) : tasks.length === 0 ? (
+                  <div className="rounded-[28px] border border-dashed border-white/10 bg-white/5 p-10 text-center backdrop-blur-xl">
+                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-800/80">
+                      <ClipboardList className="h-8 w-8 text-slate-400" />
+                    </div>
+                    <h3 className="text-2xl font-semibold text-white">No tasks yet</h3>
+                    <p className="mx-auto mt-3 max-w-md text-slate-400">
+                      Add your first task to start organising your workload and tracking deadlines properly.
+                    </p>
+                  </div>
+                ) : filteredTasks.length === 0 ? (
+                  <div className="rounded-[28px] border border-dashed border-white/10 bg-white/5 p-10 text-center backdrop-blur-xl">
+                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-800/80">
+                      <Filter className="h-8 w-8 text-slate-400" />
+                    </div>
+                    <h3 className="text-2xl font-semibold text-white">Nothing here</h3>
+                    <p className="mx-auto mt-3 max-w-md text-slate-400">
+                      There are no tasks in the <span className="text-slate-200">{filter}</span> view right now.
+                    </p>
+                  </div>
+                ) : (
+                  filteredTasks.map((task) => {
+                    const dueMeta = getDueLabel(task);
+
+                    return (
+                      <div
+                        key={task.id}
+                        className="group rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur-xl transition hover:border-white/15 hover:bg-white/[0.06]"
+                      >
+                        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                          <div className="flex items-start gap-4">
+                            <button
+                              type="button"
+                              onClick={() => toggleTask(task.id)}
+                              className="mt-1 rounded-full transition hover:scale-105"
+                              aria-label={
+                                task.completed ? "Mark as incomplete" : "Mark as complete"
+                              }
+                            >
+                              {task.completed ? (
+                                <CheckCircle2 className="h-6 w-6 text-emerald-400" />
+                              ) : (
+                                <Circle className="h-6 w-6 text-slate-500" />
+                              )}
+                            </button>
+
+                            <div className="min-w-0">
+                              <h2
+                                className={`text-xl font-semibold transition ${
+                                  task.completed
+                                    ? "text-slate-500 line-through"
+                                    : "text-white"
+                                }`}
+                              >
+                                {task.title}
+                              </h2>
+
+                              <div className="mt-3 flex flex-wrap items-center gap-2">
+                                <span className="rounded-full border border-white/10 bg-slate-900/70 px-3 py-1 text-sm text-slate-300">
+                                  {task.module}
+                                </span>
+
+                                <span className="rounded-full border border-white/10 bg-slate-900/70 px-3 py-1 text-sm text-slate-300">
+                                  Due: {formatDate(task.dueDate)}
+                                </span>
+
+                                <span
+                                  className={`rounded-full border px-3 py-1 text-sm ${getPriorityClasses(
+                                    task.priority
+                                  )}`}
+                                >
+                                  {task.priority}
+                                </span>
+
+                                <span
+                                  className={`rounded-full border px-3 py-1 text-sm ${dueMeta.className}`}
+                                >
+                                  {dueMeta.label}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={`rounded-full border px-3 py-1 text-sm ${
+                                task.completed
+                                  ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                                  : "border-blue-500/20 bg-blue-500/10 text-blue-300"
+                              }`}
+                            >
+                              {task.completed ? "Completed" : "Active"}
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={() => deleteTask(task.id)}
+                              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 px-4 py-2 text-sm text-slate-300 transition hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-300"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
