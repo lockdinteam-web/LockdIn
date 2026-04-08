@@ -452,20 +452,20 @@ export default function HomePage() {
         }
         return;
       }
-
-      const mapped: StudyBlock[] = ((data ?? []) as DatabaseStudyBlock[]).map(
-        (block) => ({
-          id: block.id,
-          day: block.day,
-          time: block.time,
-          subject: block.subject,
-          focus: block.focus,
-          taskId: block.task_id,
-          durationMinutes: block.duration_minutes,
-          completed: block.completed,
-          location: block.location,
-        })
-      );
+      
+const mapped: StudyBlock[] = ((data ?? []) as DatabaseStudyBlock[]).map(
+  (block) => ({
+    id: block.id,
+    day: block.day,
+    time: block.time,
+    subject: block.subject,
+    focus: block.focus,
+    taskId: block.task_id ?? "",
+    durationMinutes: block.duration_minutes,
+    completed: block.completed,
+    location: block.location,
+  })
+);
 
       setStudyBlocks(mapped);
     } catch (error) {
