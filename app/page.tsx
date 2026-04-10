@@ -12,6 +12,10 @@ import {
   type StudyBlock,
 } from "@/lib/calculateCookedScore";
 import {
+  upsertTodayLeaderboardSnapshot,
+  recordActivityDay,
+} from "@/lib/leaderboard";
+import {
   Trophy,
   Flame,
   Sparkles,
@@ -87,6 +91,7 @@ type LeaderboardSnapshotRow = {
   pending_tasks: number;
   completed_tasks: number;
   completion_rate: number;
+  updated_at?: string;
 };
 
 type ActivityDayRow = {
@@ -315,8 +320,12 @@ function normalizeDayLabel(value: string) {
 function blockMatchesToday(blockDay: string, today: Date) {
   const raw = normalizeDayLabel(blockDay);
 
-  const longDay = today.toLocaleDateString("en-GB", { weekday: "long" }).toLowerCase();
-  const shortDay = today.toLocaleDateString("en-GB", { weekday: "short" }).toLowerCase();
+  const longDay = today
+    .toLocaleDateString("en-GB", { weekday: "long" })
+    .toLowerCase();
+  const shortDay = today
+    .toLocaleDateString("en-GB", { weekday: "short" })
+    .toLowerCase();
 
   if (raw === longDay || raw === shortDay) return true;
 
@@ -341,7 +350,9 @@ function blockMatchesToday(blockDay: string, today: Date) {
 
   const parsed = new Date(blockDay);
   if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toISOString().slice(0, 10) === today.toISOString().slice(0, 10);
+    return (
+      parsed.toISOString().slice(0, 10) === today.toISOString().slice(0, 10)
+    );
   }
 
   return false;
@@ -374,55 +385,6 @@ async function copyText(text: string) {
     return true;
   } catch {
     return false;
-  }
-}
-
-async function upsertTodayLeaderboardSnapshotClient(
-  userId: string,
-  tasks: HomeTask[]
-) {
-  const cookedResult = calculateCookedScore(tasks, []);
-  const pendingTasks = tasks.filter((task) => !task.completed).length;
-  const completedTasks = tasks.filter((task) => task.completed).length;
-  const completionRate =
-    tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
-
-  const today = getTodayDate();
-
-  const { error: snapshotError } = await supabase
-    .from("leaderboard_snapshots")
-    .upsert(
-      {
-        user_id: userId,
-        snapshot_date: today,
-        cooked_score: cookedResult.score,
-        pending_tasks: pendingTasks,
-        completed_tasks: completedTasks,
-        completion_rate: completionRate,
-      },
-      {
-        onConflict: "user_id,snapshot_date",
-      }
-    );
-
-  if (snapshotError) {
-    console.error("Error upserting leaderboard snapshot:", snapshotError.message);
-  }
-
-  const { error: activityError } = await supabase
-    .from("user_activity_days")
-    .upsert(
-      {
-        user_id: userId,
-        activity_date: today,
-      },
-      {
-        onConflict: "user_id,activity_date",
-      }
-    );
-
-  if (activityError) {
-    console.error("Error upserting activity day:", activityError.message);
   }
 }
 
@@ -620,7 +582,7 @@ export default function HomePage() {
       const { data: snapshotRows, error: snapshotError } = await supabase
         .from("leaderboard_snapshots")
         .select(
-          "user_id, snapshot_date, cooked_score, pending_tasks, completed_tasks, completion_rate"
+          "user_id, snapshot_date, cooked_score, pending_tasks, completed_tasks, completion_rate, updated_at"
         )
         .in("user_id", allIds)
         .gte("snapshot_date", getDateDaysAgo(7));
@@ -680,27 +642,46 @@ export default function HomePage() {
         (profileRows as LeaderboardProfile[] | null) ?? []
       ).map((person) => {
         const personTasks = tasksByUser.get(person.id) ?? [];
-        const cookedResult = calculateCookedScore(personTasks, []);
-        const pendingTasks = personTasks.filter((task) => !task.completed).length;
-        const completedTasks = personTasks.filter((task) => task.completed).length;
-        const completionRate =
-          personTasks.length > 0
-            ? Math.round((completedTasks / personTasks.length) * 100)
-            : 0;
 
-        const personSnapshots = (snapshotsByUser.get(person.id) ?? []).sort((a, b) =>
-          a.snapshot_date.localeCompare(b.snapshot_date)
+        const personSnapshots = [...(snapshotsByUser.get(person.id) ?? [])].sort(
+          (a, b) => {
+            if (a.snapshot_date !== b.snapshot_date) {
+              return b.snapshot_date.localeCompare(a.snapshot_date);
+            }
+            return (b.updated_at ?? "").localeCompare(a.updated_at ?? "");
+          }
         );
 
-        const oldestSnapshot = personSnapshots[0] ?? null;
+        const latestSnapshot = personSnapshots[0] ?? null;
+        const oldestSnapshot = personSnapshots[personSnapshots.length - 1] ?? null;
 
-        const weeklyCookedChange = oldestSnapshot
-          ? cookedResult.score - oldestSnapshot.cooked_score
-          : 0;
+        const pendingTasks =
+          latestSnapshot?.pending_tasks ??
+          personTasks.filter((task) => !task.completed).length;
 
-        const weeklyPendingChange = oldestSnapshot
-          ? pendingTasks - oldestSnapshot.pending_tasks
-          : 0;
+        const completedTasks =
+          latestSnapshot?.completed_tasks ??
+          personTasks.filter((task) => task.completed).length;
+
+        const completionRate =
+          latestSnapshot?.completion_rate ??
+          (personTasks.length > 0
+            ? Math.round((completedTasks / personTasks.length) * 100)
+            : 0);
+
+        const cookedScore =
+          latestSnapshot?.cooked_score ??
+          calculateCookedScore(personTasks, []).score;
+
+        const weeklyCookedChange =
+          latestSnapshot && oldestSnapshot
+            ? latestSnapshot.cooked_score - oldestSnapshot.cooked_score
+            : 0;
+
+        const weeklyPendingChange =
+          latestSnapshot && oldestSnapshot
+            ? latestSnapshot.pending_tasks - oldestSnapshot.pending_tasks
+            : 0;
 
         const streak = calculateStreak(activityByUser.get(person.id) ?? []);
 
@@ -709,8 +690,8 @@ export default function HomePage() {
           username: person.username,
           university: person.university,
           course: person.course,
-          cookedScore: cookedResult.score,
-          status: cookedResult.status,
+          cookedScore,
+          status: getCookedZone(cookedScore),
           pendingTasks,
           completedTasks,
           completionRate,
@@ -720,7 +701,7 @@ export default function HomePage() {
           rank: 0,
           isYou: person.id === userId,
           momentumLabel: getMomentumLabel(completionRate, pendingTasks),
-          roastLabel: getRoastLabel(cookedResult.score),
+          roastLabel: getRoastLabel(cookedScore),
         };
       });
 
@@ -1002,7 +983,7 @@ export default function HomePage() {
 
   useEffect(() => {
     async function syncMySnapshot() {
-      if (!currentUserId || loading) return;
+      if (!currentUserId || loading || studyBlocksLoading) return;
 
       const leaderboardTasks = tasks.map((task) => ({
         id: task.id,
@@ -1013,11 +994,17 @@ export default function HomePage() {
         completed: task.completed,
       }));
 
-      await upsertTodayLeaderboardSnapshotClient(currentUserId, leaderboardTasks);
+      await upsertTodayLeaderboardSnapshot(
+        currentUserId,
+        leaderboardTasks,
+        studyBlocks
+      );
+
+      await recordActivityDay(currentUserId);
     }
 
     void syncMySnapshot();
-  }, [currentUserId, tasks, loading]);
+  }, [currentUserId, tasks, studyBlocks, loading, studyBlocksLoading]);
 
   useEffect(() => {
     if (!currentUserId || loading) return;
